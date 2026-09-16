@@ -431,9 +431,25 @@ class HttpJsonProvider:
             )
         return url
 
+    def _token(self) -> str | None:
+        """Fail on an unset token rather than letting the API answer 401.
+
+        An empty token would otherwise be dropped from the request and come back
+        as the API's generic "Invalid or missing access token.", which reads like
+        a rejected credential rather than a missing one.
+        """
+        token = os.environ.get(self.source.token_env) or ""
+        if not token.strip() and self.source.auth != "none":
+            raise ProviderError(
+                f"{self.source.token_env} is not set, so the request would carry no "
+                f"credential at all (auth mode {self.source.auth!r}). Export it, or "
+                "`set -a && source .env && set +a` if it only lives in .env."
+            )
+        return token
+
     def _auth_params(self) -> dict[str, str]:
         return _auth_params(
-            os.environ.get(self.source.token_env),
+            self._token(),
             self.source.auth,
             self.source.options.get("auth_param"),
         )
@@ -442,7 +458,7 @@ class HttpJsonProvider:
         headers = {"Accept": "application/json"}
         headers.update(
             _auth_headers(
-                os.environ.get(self.source.token_env),
+                self._token(),
                 self.source.auth,
                 self.source.options.get("auth_header"),
             )
@@ -453,12 +469,14 @@ class HttpJsonProvider:
 
     def fetch_raw(self) -> list[tuple[dict[str, Any], Any]]:
         """Return ``[(request_description, payload), ...]`` for every call made."""
-        base_url = self._base_url()
-        headers = self._headers()
-        variants = self.source.brand_requests or ({},)
+        # Config errors first: a broken config is worth reporting even on a
+        # machine that has no credentials to offer.
         method = (self.source.method or "get").lower()
         if method not in {"get", "post"}:
             raise ProviderError(f"unsupported source.method {self.source.method!r}, expected get or post")
+        base_url = self._base_url()
+        headers = self._headers()
+        variants = self.source.brand_requests or ({},)
         results: list[tuple[dict[str, Any], Any]] = []
 
         for variant in variants:

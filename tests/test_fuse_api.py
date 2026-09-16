@@ -122,6 +122,23 @@ def test_reported_dplus_versions_are_written_verbatim():
     assert "Apple VisionOS" not in updates
 
 
+def test_an_unset_token_fails_before_the_request(monkeypatch):
+    """A missing credential must not look like a rejected one.
+
+    Without this the request goes out with no token, the API answers its generic
+    "Invalid or missing access token.", and an empty variable reads as a bad one.
+    """
+    monkeypatch.setenv("FUSE_API_TOKEN", "   ")
+    session = FuseSession()
+
+    with pytest.raises(ProviderError) as excinfo:
+        fetch(session)
+
+    assert session.calls == []
+    assert "FUSE_API_TOKEN is not set" in str(excinfo.value)
+    assert "source .env" in str(excinfo.value)
+
+
 def test_a_401_explains_that_a_jfrog_token_is_not_a_gate_token():
     session = FuseSession(status_code=401, error={"error": "Invalid or missing access token."})
     with pytest.raises(ProviderError) as excinfo:

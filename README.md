@@ -67,7 +67,13 @@ Things worth knowing about this API, all of them handled in `config/clients.yml`
   without a gate token or a browser session. The sync says as much on a 401.
 - **The token stays out of the logs.** Query auth is merged in at the moment of
   the request, so neither the log line nor the job summary nor the probe report
-  echoes it.
+  echoes it. An unset `FUSE_API_TOKEN` fails before the request rather than
+  sending nothing and reporting the API's 401, because an empty variable and a
+  rejected credential otherwise produce the same message.
+- **A browser session also works**, which is the way to test before a gate token
+  exists: copy the whole `Cookie` header from devtools into `FUSE_API_TOKEN` and
+  switch to `auth: header` with `options.auth_header: Cookie`. Session cookies
+  expire, so this is for a one-off local check — the cron needs a gate token.
 - **`version` is not always a version.** It can be `N/A`, `ComingSoon`,
   `NotBuilt` or `Error`, and a card may carry `fetch_error`. Those are reported
   and skipped, never written into a cell. A platform with no build yet is logged
