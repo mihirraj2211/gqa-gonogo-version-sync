@@ -236,6 +236,30 @@ any row added later. A repeated header row, which this table has, is not read as
 a client. The API also builds `xbox`, `playstation4` and `playstation5`; add a
 row when the table grows one.
 
+### Moving to the next train
+
+Each train gets its own sign-off page: 7.12.0 has one, 7.13.0 will get another.
+So the page is found by title rather than pinned by id, and switching trains is
+one variable:
+
+```
+RELEASE_TRAIN=7.13.0     # and leave CONFLUENCE_PAGE_ID unset
+```
+
+That renders `confluence.title_template` ("{train} Build GQA App Sign off"),
+searches the `GQA` space, and reads the page it finds. Titles match loosely, so
+the live "Copy of 7.12.0 Build GQA App Sign off" is found by the 7.12.0 title,
+and an exact title wins over a copy.
+
+**Two loose matches is an error, not a coin toss.** If a train has both a page
+and a draft copy, the run stops and lists the candidates rather than picking
+one, because publishing to the wrong sign-off page is worse than not running.
+Set `CONFLUENCE_PAGE_ID` to settle it. A train with no page yet gets a message
+saying so instead of a 404.
+
+Precedence: `--page-id` > `--page-title` > `CONFLUENCE_PAGE_ID` > the title
+template. Pinning `CONFLUENCE_PAGE_ID` keeps the old behaviour exactly.
+
 ### Which train a run will write
 
 In order of precedence: the `RELEASE_TRAIN` variable (or `--release-train`), then
@@ -305,7 +329,7 @@ a saved body, `--output body.xhtml` to dump the storage format it would publish,
 `--release-train` to override the train.
 
 ```bash
-pytest    # 92 tests, no network needed
+pytest    # 102 tests, no network needed
 ```
 
 ### When Confluence answers 404

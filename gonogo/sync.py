@@ -187,7 +187,8 @@ def train_mismatch_hint(builds: dict[str, PlatformBuild], train: str) -> str:
         return ""
     return (
         f"; every fetched build is on train {', '.join(trains)} while this page signs off {train}. "
-        "Point CONFLUENCE_PAGE_ID at that train's page, or set RELEASE_TRAIN to override the page title"
+        f"Set RELEASE_TRAIN={trains[-1]} to write that train's page instead, "
+        "or CONFLUENCE_PAGE_ID to target one directly"
     )
 
 
@@ -240,6 +241,32 @@ def _publish(
     raise ConfluenceError("exhausted publish retries")  # pragma: no cover - loop always returns
 
 
+def resolve_page(client: ConfluenceClient, config: Config, args: argparse.Namespace) -> Page:
+    """Fetch the page this run should write.
+
+    An explicit id wins. Failing that a title is searched for, which is how a
+    new train works with no change here: 7.13.0 gets its own sign-off page, and
+    naming the train is enough to find it.
+    """
+    if args.page_id:
+        return client.get_page(args.page_id)
+
+    title = args.page_title or ""
+    if not title and not config.confluence.page_id:
+        train, source = resolve_train(config, page_title="", override=args.release_train)
+        if not train:
+            raise ConfluenceError(
+                "no page id and no train to search with: set CONFLUENCE_PAGE_ID, "
+                "or RELEASE_TRAIN so this train's page can be found by title"
+            )
+        title = config.confluence.title_for(train)
+        log.info("looking for the %s sign-off page (train from %s)", train, source)
+
+    if title:
+        return client.find_page_by_title(title)
+    return client.get_page(config.confluence.page_id)
+
+
 def run(args: argparse.Namespace) -> int:
     config = load_config(args.config)
     if args.page_id:
@@ -255,7 +282,7 @@ def run(args: argparse.Namespace) -> int:
             email=os.environ.get("ATLASSIAN_USER_EMAIL", ""),
             token=os.environ.get("ATLASSIAN_API_TOKEN", ""),
         )
-        page = client.get_page(config.confluence.page_id)
+        page = resolve_page(client, config, args)
         log.info("loaded page %s (%r) at version %d", page.id, page.title, page.version)
 
     train, train_source = resolve_train(config, page.title, args.release_train)
@@ -333,6 +360,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Sync build versions into the GQA Go/No-Go sign-off table")
     parser.add_argument("--config", default="config/clients.yml", help="path to the client mapping config")
     parser.add_argument("--page-id", help="override the Confluence page id from config")
+    parser.add_argument("--page-title", default="", help="find the page by title instead of by id")
     parser.add_argument("--page-file", help="read the page body from a file instead of Confluence (never publishes)")
     parser.add_argument(
         "--builds-file",

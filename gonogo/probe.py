@@ -25,7 +25,7 @@ from .providers import (
     get_provider,
     merge_builds,
 )
-from .sync import page_from_file, resolve_train, write_step_summary
+from .sync import page_from_file, resolve_page, resolve_train, write_step_summary
 from .versions import extract_version, is_version
 
 log = logging.getLogger("gonogo.probe")
@@ -218,7 +218,9 @@ def probe_page(config: Config, args: argparse.Namespace, report: list[str]) -> d
             email=os.environ.get("ATLASSIAN_USER_EMAIL", ""),
             token=os.environ.get("ATLASSIAN_API_TOKEN", ""),
         )
-        page = client.get_page(config.confluence.page_id)
+        # Resolved the same way the sync resolves it, so a new train's page can
+        # be checked here before anything is written to it.
+        page = resolve_page(client, config, args)
 
     shape = describe_table(page.body, config.confluence.columns)
     train, train_source = resolve_train(config, page.title, args.release_train)
@@ -303,6 +305,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Check the build API and sign-off page without writing anything")
     parser.add_argument("--config", default="config/clients.yml", help="path to the client mapping config")
     parser.add_argument("--page-id", help="override the Confluence page id from config")
+    parser.add_argument("--page-title", default="", help="find the page by title instead of by id")
     parser.add_argument("--page-file", help="read the page body from a file instead of Confluence")
     parser.add_argument(
         "--builds-file",

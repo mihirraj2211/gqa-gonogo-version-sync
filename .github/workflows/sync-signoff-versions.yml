@@ -23,11 +23,15 @@ on:
         type: boolean
         default: true
       page_id:
-        description: "Override the Confluence page id (blank = config default)"
+        description: "Confluence page id (blank = find the train's page by title)"
         type: string
         required: false
       release_train:
-        description: "Train to enforce, e.g. 7.13.0 (blank = read it from the page title)"
+        description: "Train, e.g. 7.13.0 (blank = read it from the page title)"
+        type: string
+        required: false
+      page_title:
+        description: "Find the page by this exact title instead (blank = from the train)"
         type: string
         required: false
       verbose:
@@ -52,7 +56,11 @@ jobs:
 
     env:
       CONFLUENCE_DOMAIN: ${{ vars.CONFLUENCE_DOMAIN || 'wbdstreaming.atlassian.net' }}
+      # Leave the CONFLUENCE_PAGE_ID variable unset to have each run find the
+      # train's own page by title, which is what a new train needs: set the
+      # RELEASE_TRAIN variable to 7.13.0 and nothing else changes.
       CONFLUENCE_PAGE_ID: ${{ inputs.page_id || vars.CONFLUENCE_PAGE_ID }}
+      CONFLUENCE_SPACE_KEY: ${{ vars.CONFLUENCE_SPACE_KEY || 'GQA' }}
       ATLASSIAN_USER_EMAIL: ${{ secrets.ATLASSIAN_USER_EMAIL }}
       ATLASSIAN_API_TOKEN: ${{ secrets.ATLASSIAN_API_TOKEN }}
       FUSE_BUILDS_API_URL: ${{ secrets.FUSE_BUILDS_API_URL }}
@@ -95,5 +103,6 @@ jobs:
         run: |
           python -m gonogo.sync \
             --config config/clients.yml \
+            ${{ inputs.page_title && format('--page-title "{0}"', inputs.page_title) || '' }} \
             ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '--dry-run' || '' }} \
             ${{ (github.event_name == 'workflow_dispatch' && inputs.verbose) && '--verbose' || '' }}

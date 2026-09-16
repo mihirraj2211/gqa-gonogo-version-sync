@@ -71,6 +71,17 @@ class ConfluenceConfig:
     page_id: str
     version_message: str = "Automated build version sync"
     columns: dict[str, list[str]] = field(default_factory=dict)
+    #: Each train gets its own sign-off page, so the page can be found by title
+    #: instead of pinning an id here every train.
+    space_key: str = ""
+    title_template: str = ""
+
+    def title_for(self, train: str) -> str:
+        """Render the page title for a train, e.g. 7.12.0 -> the 7.12.0 page."""
+        if not self.title_template:
+            return ""
+        short = ".".join(train.split(".")[:2]) if train else ""
+        return self.title_template.format(train=train, train_short=short)
 
 
 @dataclass(frozen=True)
@@ -149,9 +160,17 @@ def load_config(path: str | Path) -> Config:
         page_id=str(os.environ.get("CONFLUENCE_PAGE_ID") or confluence_raw.get("page_id", "")),
         version_message=confluence_raw.get("version_message", "Automated build version sync"),
         columns=confluence_raw.get("columns", {}),
+        space_key=os.environ.get("CONFLUENCE_SPACE_KEY") or confluence_raw.get("space_key", ""),
+        title_template=os.environ.get("CONFLUENCE_TITLE_TEMPLATE")
+        or confluence_raw.get("title_template", ""),
     )
-    if not confluence.domain or not confluence.page_id:
-        raise ValueError("confluence.domain and confluence.page_id are required")
+    if not confluence.domain:
+        raise ValueError("confluence.domain is required")
+    if not confluence.page_id and not confluence.title_template:
+        raise ValueError(
+            "set confluence.page_id (or CONFLUENCE_PAGE_ID) to target one page, "
+            "or confluence.title_template to find each train's page by title"
+        )
 
     source_raw = raw.get("source", {})
     source = SourceConfig(

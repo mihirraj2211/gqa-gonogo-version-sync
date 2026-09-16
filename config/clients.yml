@@ -13,8 +13,8 @@ release:
   # Refuse to publish a version whose train does not match the resolved train.
   enforce_train: true
   # Read the train from the page title ("Copy of 7.12.0 Build GQA App Sign off"
-  # -> 7.12.0), so moving to the next train is a page id change, not a code
-  # change. Precedence: RELEASE_TRAIN override > page title > `train` above.
+  # -> 7.12.0), so the page decides what it accepts rather than this file.
+  # Precedence: RELEASE_TRAIN override > page title > `train` above.
   train_from_page_title: true
   # D-Plus is its own product in the API, so its version is written exactly as
   # reported. When a platform reports no D+ build at all (iOS and tvOS do this
@@ -23,9 +23,21 @@ release:
   # 21.12.0.16, so the guess would publish a build nobody can install.
   derive_missing_dplus: false
 
+# Each train gets its own sign-off page (7.12.0 has one, 7.13.0 will get its
+# own), so `page_id` pins one page and `title_template` finds a train's page by
+# title. With the template set, moving to the next train is RELEASE_TRAIN=7.13.0
+# and nothing else: no edit here, no new page id to copy.
+#
+# Precedence: --page-id > --page-title > CONFLUENCE_PAGE_ID > title_template.
+# An ambiguous title is an error, never a guess about where to publish.
 confluence:
   domain: wbdstreaming.atlassian.net
   page_id: "4137255661"  # Copy of 7.12.0 Build GQA App Sign off
+  space_key: GQA
+  # {train} is 7.12.0, {train_short} is 7.12. Matched loosely, so the live
+  # "Copy of 7.12.0 Build GQA App Sign off" is found too. Clear page_id above
+  # (or leave CONFLUENCE_PAGE_ID unset) to use this.
+  title_template: "{train} Build GQA App Sign off"
   version_message: "Automated build version sync"
   # Column headers to locate in the sign-off table. First match wins.
   columns:
