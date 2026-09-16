@@ -21,6 +21,7 @@ from .confluence import (
     parse_storage,
 )
 from .providers import PlatformBuild, ProviderError, get_provider, summarise
+from .redaction import install_log_redaction
 from .versions import (
     VersionError,
     derive_dplus,
@@ -410,9 +411,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def configure_logging(verbose: bool) -> None:
     """Turn on debug logging without printing credentials.
 
-    urllib3 logs whole request lines at DEBUG, and the build API takes its token
-    as a query parameter, so --verbose would otherwise put the token in the log
-    and into anything the log gets pasted into.
+    urllib3 logs whole request lines at DEBUG and retried URLs at WARNING, and
+    this API's token rides in the query string, so the level is capped and every
+    record is scrubbed before it reaches a handler.
     """
     level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(level=level, format="%(levelname)s %(name)s: %(message)s")
@@ -420,6 +421,7 @@ def configure_logging(verbose: bool) -> None:
     # level outright: --verbose has to mean verbose either way.
     logging.getLogger().setLevel(level)
     logging.getLogger("urllib3").setLevel(logging.INFO)
+    install_log_redaction()
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -17,6 +17,7 @@ from typing import Any
 
 from .config import Config, load_config, normalise_label
 from .confluence import ConfluenceClient, ConfluenceError, describe_table
+from .redaction import install_log_redaction, redact
 from .providers import (
     ProviderError,
     collect_builds,
@@ -303,8 +304,8 @@ def run(args: argparse.Namespace) -> int:
                 f"expected at least {max(1, args.min_platforms)}"
             )
     except ProviderError as exc:
-        report += [f"**Build source failed:** {exc}", ""]
-        failures.append(f"build source: {exc}")
+        report += [f"**Build source failed:** {redact(str(exc))}", ""]
+        failures.append(f"build source: {redact(str(exc))}")
 
     if args.no_page:
         report += ["## Sign-off page", "", "Skipped (`--no-page`).", ""]
@@ -320,8 +321,8 @@ def run(args: argparse.Namespace) -> int:
             if page_result["train_mismatch"]:
                 failures.append(page_result["train_mismatch"])
         except (ConfluenceError, OSError) as exc:
-            report += [f"**Page check failed:** {exc}", ""]
-            failures.append(f"page: {exc}")
+            report += [f"**Page check failed:** {redact(str(exc))}", ""]
+            failures.append(f"page: {redact(str(exc))}")
 
     if failures:
         report += ["## Result", "", "Probe failed:", ""] + [f"- {item}" for item in failures]
@@ -364,6 +365,7 @@ def main(argv: list[str] | None = None) -> int:
         format="%(levelname)s %(name)s: %(message)s",
     )
     logging.getLogger("urllib3").setLevel(logging.INFO)
+    install_log_redaction()
     try:
         return run(args)
     except (ValueError, OSError) as exc:
