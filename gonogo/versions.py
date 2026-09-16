@@ -55,12 +55,31 @@ def is_version(value: str) -> bool:
     return bool(_VERSION_RE.match(value or ""))
 
 
-def derive_dplus(max_version: str, scheme: str, dplus_build: int | None = None) -> str | None:
+def expected_dplus_major(max_version: str, scheme: str) -> int | None:
+    """The major a D+ version should carry for this scheme, or None if unshipped."""
+    if scheme not in SCHEMES:
+        raise ValueError(f"unknown dplus scheme {scheme!r}, expected one of {SCHEMES}")
+    if scheme == SCHEME_NONE:
+        return None
+    major = parse_version(max_version).major
+    return major + DPLUS_MAJOR_OFFSET if scheme == SCHEME_OFFSET else major
+
+
+def derive_dplus(
+    max_version: str,
+    scheme: str,
+    dplus_build: int | None = None,
+    assume_max_build: bool = False,
+) -> str | None:
     """Return the D+ version string for a client row.
 
-    ``dplus_build`` overrides the build octet when the source API reports a
-    separate D+ build number, which is the normal case: D+ and MAX are built
-    from the same branch but rarely land on the same build count.
+    ``dplus_build`` is the build octet the source reported for D+. Without one
+    there is nothing to derive and this returns ``None``: D+ and MAX build from
+    the same branch but land on different build counts, so borrowing MAX's octet
+    would name a build that was never produced. Live example - iOS on the 7.12.0
+    train is MAX ``7.12.0.73`` and D+ ``21.12.0.16``.
+
+    ``assume_max_build`` opts into that guess for a feed that only carries MAX.
     """
     if scheme not in SCHEMES:
         raise ValueError(f"unknown dplus scheme {scheme!r}, expected one of {SCHEMES}")
@@ -68,9 +87,12 @@ def derive_dplus(max_version: str, scheme: str, dplus_build: int | None = None) 
         return None
 
     version = parse_version(max_version)
+    if dplus_build is None:
+        if not assume_max_build:
+            return None
+        dplus_build = version.build
     major = version.major + DPLUS_MAJOR_OFFSET if scheme == SCHEME_OFFSET else version.major
-    build = version.build if dplus_build is None else dplus_build
-    return str(Version(major, version.minor, version.patch, build))
+    return str(Version(major, version.minor, version.patch, dplus_build))
 
 
 def extract_version(text: str) -> str | None:

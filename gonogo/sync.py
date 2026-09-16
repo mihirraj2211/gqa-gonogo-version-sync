@@ -21,7 +21,14 @@ from .confluence import (
     parse_storage,
 )
 from .providers import PlatformBuild, ProviderError, get_provider, summarise
-from .versions import VersionError, derive_dplus, extract_train, is_version, parse_version
+from .versions import (
+    VersionError,
+    derive_dplus,
+    expected_dplus_major,
+    extract_train,
+    is_version,
+    parse_version,
+)
 
 log = logging.getLogger("gonogo")
 
@@ -77,21 +84,31 @@ def plan_updates(
             except VersionError:
                 log.warning("%s: ignoring unparsable D+ version %r", client.row, build.dplus_version)
 
-        derived = derive_dplus(str(max_version), client.dplus_scheme, reported.build if reported else None)
-        dplus = derived
-        # A brand the client does not ship keeps its cell whatever the feed says.
-        if reported and derived and config.release.dplus_from_source:
-            dplus = str(reported)
-            if dplus != derived:
-                log.info(
-                    "%s: writing D+ %s as reported by the source; the %s scheme derives %s",
+        expected_major = expected_dplus_major(str(max_version), client.dplus_scheme)
+        if reported and expected_major is not None:
+            # The source is authoritative for D+, so write it as reported. A
+            # major that disagrees with the row's scheme means the row is mapped
+            # to the wrong platform or the wrong brand, which is worth saying.
+            if reported.major != expected_major:
+                log.warning(
+                    "%s: D+ %s is not a %s-scheme version (expected major %d); check dplus_scheme and the platform key",
                     client.row,
-                    dplus,
+                    reported,
                     client.dplus_scheme,
-                    derived,
+                    expected_major,
                 )
-        if dplus:
-            values["dplus"] = dplus
+            values["dplus"] = str(reported)
+        elif expected_major is not None:
+            guess = derive_dplus(
+                str(max_version),
+                client.dplus_scheme,
+                assume_max_build=config.release.derive_missing_dplus,
+            )
+            if guess:
+                values["dplus"] = guess
+                log.warning("%s: no D+ build reported, writing %s borrowed from the MAX build", client.row, guess)
+            else:
+                log.warning("%s: no D+ version reported, leaving that cell as it is", client.row)
         updates[client.row] = values
 
     return updates, skipped

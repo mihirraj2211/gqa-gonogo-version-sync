@@ -26,10 +26,37 @@ def test_offset_and_base_rows_get_the_right_dplus_scheme():
     assert updates["Web"] == {"max": "7.12.0.133", "dplus": "7.12.0.96"}
 
 
-def test_dplus_is_derived_when_the_api_reports_only_max():
+def test_a_missing_dplus_leaves_the_cell_alone(caplog):
+    """MAX lands, D+ is left as it was.
+
+    This is the live iOS and tvOS case: the D-Plus product reports no build for
+    them, and their real D+ build number is nothing like MAX's, so writing
+    anything here would be a guess published on a sign-off page.
+    """
     config = load_config(CONFIG)
     updates, _ = plan_updates(config, {"androidtv": build("androidtv", "7.12.0.43")})
+
+    assert updates["Android TV"] == {"max": "7.12.0.43"}
+    assert "leaving that cell as it is" in caplog.text
+
+
+def test_borrowing_the_max_build_can_be_turned_on():
+    config = load_config(CONFIG)
+    config = replace(config, release=replace(config.release, derive_missing_dplus=True))
+    updates, _ = plan_updates(config, {"androidtv": build("androidtv", "7.12.0.43")})
     assert updates["Android TV"] == {"max": "7.12.0.43", "dplus": "21.12.0.43"}
+
+
+def test_a_dplus_version_off_its_scheme_is_flagged(caplog):
+    """A base-scheme number on an offset row means the row is mapped wrong."""
+    config = load_config(CONFIG)
+    androidtv = replace(build("androidtv", "7.12.0.43"), dplus_version="7.12.0.43")
+    updates, _ = plan_updates(config, {"androidtv": androidtv})
+
+    # Still written as reported: the source is authoritative, but say so loudly.
+    assert updates["Android TV"] == {"max": "7.12.0.43", "dplus": "7.12.0.43"}
+    assert "not a offset-scheme version" in caplog.text
+    assert "expected major 21" in caplog.text
 
 
 def test_visionos_gets_no_dplus_value():

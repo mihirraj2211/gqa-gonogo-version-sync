@@ -116,8 +116,8 @@ def test_reported_dplus_versions_are_written_verbatim():
     # MAX build number would have written the wrong number.
     assert updates["CDEV"] == {"max": "7.12.0.132", "dplus": "7.12.0.130"}
     assert updates["Apple iOS"] == {"max": "7.12.0.73", "dplus": "21.12.0.16"}
-    # Fire TV has no D+ build reported, so the +14 scheme fills it in.
-    assert updates["Fire TV"] == {"max": "7.12.0.43", "dplus": "21.12.0.43"}
+    # Fire TV reports N/A for D+, so MAX lands and the D+ cell is left alone.
+    assert updates["Fire TV"] == {"max": "7.12.0.43"}
     # VisionOS does not ship D+ and is not a device this API builds.
     assert "Apple VisionOS" not in updates
 

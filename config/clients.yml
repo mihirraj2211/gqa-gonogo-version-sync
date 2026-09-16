@@ -16,10 +16,12 @@ release:
   # -> 7.12.0), so moving to the next train is a page id change, not a code
   # change. Precedence: RELEASE_TRAIN override > page title > `train` above.
   train_from_page_title: true
-  # The API reports D-Plus as its own product, so write what it says. The +14
-  # store-offset derivation below stays as the fallback for platforms the
-  # D-Plus feed does not cover.
-  dplus_from_source: true
+  # D-Plus is its own product in the API, so its version is written exactly as
+  # reported. When a platform reports no D+ build at all (iOS and tvOS do this
+  # today) the cell is left as it is. Turning this on borrows the MAX build
+  # octet instead, which is a guess: iOS is MAX 7.12.0.73 against a real D+ of
+  # 21.12.0.16, so the guess would publish a build nobody can install.
+  derive_missing_dplus: false
 
 confluence:
   domain: wbdstreaming.atlassian.net

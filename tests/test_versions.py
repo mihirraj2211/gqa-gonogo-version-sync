@@ -6,6 +6,7 @@ from gonogo.versions import (
     SCHEME_OFFSET,
     VersionError,
     derive_dplus,
+    expected_dplus_major,
     extract_train,
     extract_version,
     parse_version,
@@ -26,11 +27,34 @@ def test_parse_version_rejects_non_octet_strings(value):
 
 
 def test_offset_platforms_move_to_the_21_train():
-    assert derive_dplus("7.12.0.16", SCHEME_OFFSET) == "21.12.0.16"
+    assert derive_dplus("7.12.0.16", SCHEME_OFFSET, dplus_build=16) == "21.12.0.16"
 
 
 def test_base_platforms_keep_the_max_train():
-    assert derive_dplus("7.12.0.96", SCHEME_BASE) == "7.12.0.96"
+    assert derive_dplus("7.12.0.96", SCHEME_BASE, dplus_build=96) == "7.12.0.96"
+
+
+def test_a_missing_dplus_build_is_not_invented():
+    """Borrowing MAX's octet would name a build that was never produced.
+
+    On the 7.12.0 train iOS is MAX 7.12.0.73 and D+ 21.12.0.16, so a guess of
+    21.12.0.73 would be a version nobody can install.
+    """
+    assert derive_dplus("7.12.0.73", SCHEME_OFFSET) is None
+    assert derive_dplus("7.12.0.133", SCHEME_BASE) is None
+
+
+def test_borrowing_the_max_build_is_opt_in():
+    assert derive_dplus("7.12.0.73", SCHEME_OFFSET, assume_max_build=True) == "21.12.0.73"
+    assert derive_dplus("7.12.0.133", SCHEME_BASE, assume_max_build=True) == "7.12.0.133"
+    # A reported build still wins over the guess.
+    assert derive_dplus("7.12.0.73", SCHEME_OFFSET, dplus_build=16, assume_max_build=True) == "21.12.0.16"
+
+
+def test_expected_major_follows_the_scheme():
+    assert expected_dplus_major("7.12.0.73", SCHEME_OFFSET) == 21
+    assert expected_dplus_major("7.12.0.73", SCHEME_BASE) == 7
+    assert expected_dplus_major("7.12.0.73", SCHEME_NONE) is None
 
 
 def test_separate_dplus_build_number_wins():

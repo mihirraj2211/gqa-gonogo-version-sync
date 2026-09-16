@@ -95,9 +95,21 @@ Things worth knowing about this API, all of them handled in `config/clients.yml`
   sign-off. TVE would additionally need a `brand` (network) parameter and has no
   tree on either PlayStation.
 
-D-Plus arrives as its own product, so its version is written as reported rather
-than derived. The `+14` store-offset derivation below stays as the fallback for
-platforms the D-Plus feed does not cover.
+### D+ versions are never invented
+
+D-Plus arrives as its own product, so its version is written exactly as
+reported. When a platform reports no D+ build — iOS and tvOS both do on the
+7.12.0 train — **the D+ cell is left as it is** and the run says so.
+
+The `+14` store offset is only used to check that a reported version suits the
+row's scheme, not to fill a gap. Borrowing MAX's build octet would name a build
+that was never produced: iOS is MAX `7.12.0.73` against a real D+ of
+`21.12.0.16`, so the guess would be `21.12.0.73`, a version nobody can install.
+Set `release.derive_missing_dplus: true` to accept that guess anyway.
+
+A reported D+ version whose major disagrees with the row's `dplus_scheme` is
+still written, but logged as a warning: it usually means the row points at the
+wrong platform key.
 
 ### Checking it before trusting it
 
@@ -279,8 +291,26 @@ a saved body, `--output body.xhtml` to dump the storage format it would publish,
 `--release-train` to override the train.
 
 ```bash
-pytest    # 83 tests, no network needed
+pytest    # 89 tests, no network needed
 ```
+
+### When Confluence answers 404
+
+A 404 from `/wiki/api/v2/pages/{id}` for a page you can open in a browser has
+several unrelated causes: a token that authenticates against Jira but not
+Confluence, an account that differs from the one in your browser, view
+restrictions on the page (which return 404, not 403), or an id that belongs to a
+whiteboard or database rather than a page.
+
+```bash
+set -a && source .env && set +a
+python tools/diagnose_confluence.py
+```
+
+That asks each question separately — who the token authenticates as, whether the
+space is visible, whether v1 sees the id and as what type, and which ids a title
+search returns — then prints a verdict. It never mixes up "could not connect"
+with "credential refused", and it masks the token.
 
 ## Known limits
 

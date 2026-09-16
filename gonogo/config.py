@@ -51,10 +51,10 @@ class ReleaseConfig:
     # A sign-off page is per train and says so in its title, so the page can
     # name the train it accepts instead of this repo being edited every train.
     train_from_page_title: bool = True
-    # Write the D+ version the source reports rather than one derived from the
-    # MAX version. Derivation stays as the fallback for platforms the D+ feed
-    # does not cover.
-    dplus_from_source: bool = True
+    # When the source reports no D+ build for a platform, borrow the MAX build
+    # octet rather than leaving the cell alone. Off by default: iOS reports MAX
+    # 7.12.0.73 against a real D+ of 21.12.0.16, so the guess would be wrong.
+    derive_missing_dplus: bool = False
 
 
 @dataclass(frozen=True)
@@ -160,7 +160,7 @@ def load_config(path: str | Path) -> Config:
         branch_dplus=release_raw.get("branch_dplus", ""),
         enforce_train=_env_flag("ENFORCE_TRAIN", bool(release_raw.get("enforce_train", True))),
         train_from_page_title=bool(release_raw.get("train_from_page_title", True)),
-        dplus_from_source=bool(release_raw.get("dplus_from_source", True)),
+        derive_missing_dplus=bool(release_raw.get("derive_missing_dplus", False)),
     )
 
     return Config(release=release, confluence=confluence, source=source, clients=tuple(clients))
