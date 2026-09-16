@@ -32,11 +32,16 @@ release:
 # An ambiguous title is an error, never a guess about where to publish.
 confluence:
   domain: wbdstreaming.atlassian.net
-  page_id: "4137255661"  # Copy of 7.12.0 Build GQA App Sign off
+  # Left blank on purpose: with no id, each run finds the current train's page
+  # by title, which is what carries the sync from 7.12.0 to 7.13.0 on its own.
+  # Pin one page by setting the CONFLUENCE_PAGE_ID variable or .env entry,
+  # which is how the "Copy of ..." page is used for testing without a code
+  # change; deleting that variable is then the whole go-live step.
+  page_id: ""
   space_key: GQA
   # {train} is 7.12.0, {train_short} is 7.12. Matched loosely, so the live
-  # "Copy of 7.12.0 Build GQA App Sign off" is found too. Clear page_id above
-  # (or leave CONFLUENCE_PAGE_ID unset) to use this.
+  # "Copy of 7.12.0 Build GQA App Sign off" is found too, though an exact title
+  # wins over a copy when both exist.
   title_template: "{train} Build GQA App Sign off"
   version_message: "Automated build version sync"
   # Column headers to locate in the sign-off table. First match wins.
