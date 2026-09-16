@@ -14,7 +14,7 @@ import pytest
 
 from gonogo.config import load_config
 from gonogo.providers import HttpJsonProvider, ProviderError
-from gonogo.sync import plan_updates
+from gonogo.sync import configure_logging, plan_updates
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / "config" / "clients.yml"
@@ -164,4 +164,20 @@ def test_a_401_explains_that_a_jfrog_token_is_not_a_gate_token():
 
 def test_the_token_never_appears_in_a_log_line(caplog):
     fetch(FuseSession())
+    assert "gate-token-value" not in caplog.text
+
+
+def test_verbose_logging_does_not_print_the_token(caplog):
+    """The gate token rides in the query string, so urllib3 must stay quiet.
+
+    Its DEBUG log prints whole request lines, which put the live token in a
+    terminal once already.
+    """
+    configure_logging(verbose=True)
+    assert logging.getLogger().level == logging.DEBUG
+    assert logging.getLogger("urllib3").level == logging.INFO
+
+    # Nothing this repo logs itself carries the credential either.
+    with caplog.at_level(logging.DEBUG):
+        fetch(FuseSession())
     assert "gate-token-value" not in caplog.text

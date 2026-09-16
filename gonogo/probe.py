@@ -365,6 +365,7 @@ def main(argv: list[str] | None = None) -> int:
         level=logging.DEBUG if args.verbose else logging.WARNING,
         format="%(levelname)s %(name)s: %(message)s",
     )
+    logging.getLogger("urllib3").setLevel(logging.INFO)
     try:
         return run(args)
     except (ValueError, OSError) as exc:

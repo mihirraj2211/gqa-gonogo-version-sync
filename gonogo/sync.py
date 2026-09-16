@@ -409,12 +409,24 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def configure_logging(verbose: bool) -> None:
+    """Turn on debug logging without printing credentials.
+
+    urllib3 logs whole request lines at DEBUG, and the build API takes its token
+    as a query parameter, so --verbose would otherwise put the token in the log
+    and into anything the log gets pasted into.
+    """
+    level = logging.DEBUG if verbose else logging.INFO
+    logging.basicConfig(level=level, format="%(levelname)s %(name)s: %(message)s")
+    # basicConfig does nothing if logging is already configured, so set the
+    # level outright: --verbose has to mean verbose either way.
+    logging.getLogger().setLevel(level)
+    logging.getLogger("urllib3").setLevel(logging.INFO)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(levelname)s %(name)s: %(message)s",
-    )
+    configure_logging(args.verbose)
     try:
         return run(args)
     except (ProviderError, ConfluenceError, VersionError, ValueError, OSError) as exc:
