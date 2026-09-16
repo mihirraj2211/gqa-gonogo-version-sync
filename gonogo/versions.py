@@ -73,13 +73,10 @@ def derive_dplus(
 ) -> str | None:
     """Return the D+ version string for a client row.
 
-    ``dplus_build`` is the build octet the source reported for D+. Without one
-    there is nothing to derive and this returns ``None``: D+ and MAX build from
-    the same branch but land on different build counts, so borrowing MAX's octet
-    would name a build that was never produced. Live example - iOS on the 7.12.0
-    train is MAX ``7.12.0.73`` and D+ ``21.12.0.16``.
-
-    ``assume_max_build`` opts into that guess for a feed that only carries MAX.
+    Without a reported ``dplus_build`` this returns ``None`` rather than borrow
+    MAX's octet, which would name a build that was never produced: iOS on 7.12.0
+    is MAX ``7.12.0.73`` against a real D+ of ``21.12.0.16``. ``assume_max_build``
+    opts into that guess for a feed carrying only MAX.
     """
     if scheme not in SCHEMES:
         raise ValueError(f"unknown dplus scheme {scheme!r}, expected one of {SCHEMES}")

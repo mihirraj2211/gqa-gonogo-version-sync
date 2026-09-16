@@ -2,19 +2,15 @@ name: Sync Go/No-Go build versions
 
 on:
   schedule:
-    # Every 15 minutes. GitHub queues scheduled runs on shared capacity, so
-    # expect drift and occasional skipped ticks under load. `*/5` is the
-    # platform floor; nothing shorter will fire.
+    # Expect a few minutes of drift: GitHub queues these on shared capacity.
+    # `*/5` is the platform floor, nothing shorter fires.
     - cron: "*/15 * * * *"
 
-  # Closest thing to live: a build pipeline that POSTs here gets the page
-  # updated in about a minute instead of waiting for the next tick. Pass a train
-  # in client_payload to write that train's page regardless of the feed.
-  #   curl -X POST -H "Accept: application/vnd.github+json" \
-  #        -H "Authorization: Bearer <PAT with repo scope>" \
+  # A build pipeline POSTing here updates the page in about a minute instead
+  # of waiting for the next tick. client_payload.release_train pins the train.
+  #   curl -X POST -H "Authorization: Bearer <PAT with repo scope>" \
   #        https://api.github.com/repos/${{ github.repository }}/dispatches \
-  #        -d '{"event_type":"build-published",
-  #             "client_payload":{"release_train":"7.13.0"}}'
+  #        -d '{"event_type":"build-published"}'
   repository_dispatch:
     types: [build-published]
 
@@ -51,17 +47,14 @@ concurrency:
 
 jobs:
   sync:
-    # Set the SYNC_RUNNER repository variable to a self-hosted label when the
-    # build API is only reachable from inside the WBD network.
+    # Set SYNC_RUNNER to a self-hosted label if the build API is internal.
     runs-on: ${{ vars.SYNC_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 10
 
     env:
       CONFLUENCE_DOMAIN: ${{ vars.CONFLUENCE_DOMAIN || 'wbdstreaming.atlassian.net' }}
-      # Leave the CONFLUENCE_PAGE_ID variable unset and a scheduled run finds
-      # the current train's page by title on its own: it reads the train from
-      # the build feed, so the day 7.13.0 starts building it moves to the
-      # 7.13.0 page with no variable to change. Setting the id pins one page.
+      # Unset: the run reads the train from the build feed and finds that
+      # train's page, so 7.13.0 needs no change here. Set it to pin one page.
       CONFLUENCE_PAGE_ID: ${{ inputs.page_id || vars.CONFLUENCE_PAGE_ID }}
       CONFLUENCE_SPACE_KEY: ${{ vars.CONFLUENCE_SPACE_KEY || 'GQA' }}
       ATLASSIAN_USER_EMAIL: ${{ secrets.ATLASSIAN_USER_EMAIL }}
@@ -71,8 +64,7 @@ jobs:
       JFROG_URL: ${{ secrets.JFROG_URL }}
       JFROG_TOKEN: ${{ secrets.JFROG_TOKEN }}
       BUILD_PROVIDER: ${{ vars.BUILD_PROVIDER }}
-      # Set this only to pin a train, e.g. to keep writing 7.12.0 while 7.13.0
-      # builds appear. Unset means "whichever train the feed is building".
+      # Pins a train, e.g. to keep writing 7.12.0 while 7.13.0 builds appear.
       RELEASE_TRAIN: >-
         ${{ inputs.release_train
             || github.event.client_payload.release_train
@@ -90,8 +82,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      # Without this, a missing secret fails the same way every 15 minutes with
-      # a message that looks like an API problem rather than a setup problem.
+      # A missing secret otherwise fails like an API problem, every 15 minutes.
       - name: Check credentials are configured
         run: |
           missing=()
