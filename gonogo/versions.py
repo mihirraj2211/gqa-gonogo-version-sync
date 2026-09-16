@@ -1,0 +1,79 @@
+"""Version parsing and MAX -> D+ derivation for Fuse multi-brand builds.
+
+MAX tracks the base unified Fuse version (``7.x.y.build``). Apple, Android
+mobile and Android TV ship D+ from the store-offset scheme (``21.x.y.build``);
+Web, CDEV, Chromecast and Roku ship D+ on the same base scheme as MAX.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+
+#: 7.x -> 21.x for platforms that carry a store version offset.
+DPLUS_MAJOR_OFFSET = 14
+
+#: How a client row derives its D+ version from the MAX version.
+SCHEME_BASE = "base"      # same major as MAX (7.x.y.build)
+SCHEME_OFFSET = "offset"  # major + 14 (21.x.y.build)
+SCHEME_NONE = "none"      # brand not shipped on this client; cell left alone
+
+SCHEMES = (SCHEME_BASE, SCHEME_OFFSET, SCHEME_NONE)
+
+_VERSION_RE = re.compile(r"^\s*(\d+)\.(\d+)\.(\d+)\.(\d+)\s*$")
+
+
+class VersionError(ValueError):
+    """Raised when a build string is not a 4-segment Fuse version."""
+
+
+@dataclass(frozen=True, order=True)
+class Version:
+    major: int
+    minor: int
+    patch: int
+    build: int
+
+    def __str__(self) -> str:
+        return f"{self.major}.{self.minor}.{self.patch}.{self.build}"
+
+    @property
+    def train(self) -> str:
+        """The 3-segment release train, e.g. ``7.12.0``."""
+        return f"{self.major}.{self.minor}.{self.patch}"
+
+
+def parse_version(value: str) -> Version:
+    """Parse a 4-segment octet version string such as ``7.12.0.133``."""
+    match = _VERSION_RE.match(value or "")
+    if not match:
+        raise VersionError(f"not a 4-segment version: {value!r}")
+    return Version(*(int(part) for part in match.groups()))
+
+
+def is_version(value: str) -> bool:
+    return bool(_VERSION_RE.match(value or ""))
+
+
+def derive_dplus(max_version: str, scheme: str, dplus_build: int | None = None) -> str | None:
+    """Return the D+ version string for a client row.
+
+    ``dplus_build`` overrides the build octet when the source API reports a
+    separate D+ build number, which is the normal case: D+ and MAX are built
+    from the same branch but rarely land on the same build count.
+    """
+    if scheme not in SCHEMES:
+        raise ValueError(f"unknown dplus scheme {scheme!r}, expected one of {SCHEMES}")
+    if scheme == SCHEME_NONE:
+        return None
+
+    version = parse_version(max_version)
+    major = version.major + DPLUS_MAJOR_OFFSET if scheme == SCHEME_OFFSET else version.major
+    build = version.build if dplus_build is None else dplus_build
+    return str(Version(major, version.minor, version.patch, build))
+
+
+def extract_version(text: str) -> str | None:
+    """Pull the first 4-segment version out of free text such as a filename."""
+    match = re.search(r"\d+\.\d+\.\d+\.\d+", text or "")
+    return match.group(0) if match else None

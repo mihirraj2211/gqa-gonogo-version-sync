@@ -1,0 +1,57 @@
+name: Sync Go/No-Go build versions
+
+on:
+  schedule:
+    # Every 15 minutes. GitHub queues scheduled runs on shared capacity, so
+    # expect drift and occasional skipped ticks under load.
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Report changes without publishing to Confluence"
+        type: boolean
+        default: true
+      page_id:
+        description: "Override the Confluence page id (blank = config default)"
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  # Never let two runs publish page versions on top of each other.
+  group: gonogo-signoff-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    # Set the SYNC_RUNNER repository variable to a self-hosted label when the
+    # build API is only reachable from inside the WBD network.
+    runs-on: ${{ vars.SYNC_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Sync sign-off versions
+        env:
+          CONFLUENCE_DOMAIN: ${{ vars.CONFLUENCE_DOMAIN || 'wbdstreaming.atlassian.net' }}
+          CONFLUENCE_PAGE_ID: ${{ inputs.page_id || vars.CONFLUENCE_PAGE_ID }}
+          ATLASSIAN_USER_EMAIL: ${{ secrets.ATLASSIAN_USER_EMAIL }}
+          ATLASSIAN_API_TOKEN: ${{ secrets.ATLASSIAN_API_TOKEN }}
+          FUSE_BUILDS_API_URL: ${{ secrets.FUSE_BUILDS_API_URL }}
+          FUSE_API_TOKEN: ${{ secrets.FUSE_API_TOKEN }}
+          RELEASE_TRAIN: ${{ vars.RELEASE_TRAIN }}
+        run: |
+          python -m gonogo.sync \
+            --config config/clients.yml \
+            ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '--dry-run' || '' }}

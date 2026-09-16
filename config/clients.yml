@@ -1,0 +1,126 @@
+# Go/No-Go sign-off sync configuration.
+#
+# `clients` maps each row of the Confluence Go/No-Go table to the platform key
+# returned by the build API. Row matching is case- and punctuation-insensitive,
+# so "Apple iOS / tvOS" matches "apple ios/tvos".
+
+release:
+  # The release train being signed off. Used to reject stale builds from an
+  # older train and to pick the branch when querying the build source.
+  train: "7.12.0"
+  branch_max: "release/beam/7.12.0"
+  branch_dplus: "release/dplus/7.12.0"
+  # Refuse to publish a version whose train does not match `train` above.
+  enforce_train: true
+
+confluence:
+  domain: wbdstreaming.atlassian.net
+  page_id: "4137255661"  # Copy of 7.12.0 Build GQA App Sign off
+  version_message: "Automated build version sync"
+  # Column headers to locate in the sign-off table. First match wins.
+  columns:
+    client: ["Client", "Platform", "Client / Platform"]
+    max: ["MAX Version Number", "MAX Version", "MAX Build", "MAX"]
+    dplus: ["DPlus Version Number", "D+ Version Number", "DPlus Version", "DPLUS", "D+"]
+
+source:
+  # fuse_api | grafana | jfrog | file
+  provider: fuse_api
+  url_env: FUSE_BUILDS_API_URL
+  token_env: FUSE_API_TOKEN
+  # Auth header sent with the token: bearer | token | basic | none
+  auth: bearer
+  timeout_seconds: 30
+  # Query string sent to the build API. Mirrors the Fuse monitoring dashboard
+  # controls (environment / brand / date).
+  query:
+    env: orange
+  # How to read the response payload. Adjust these field names once the exact
+  # Fuse build API response shape is confirmed.
+  response:
+    records_path: ""          # dot path to the list/map of records ("" = root)
+    platform_field: name
+    version_field: version
+    brand_field: brand        # omit if the API returns one record per platform
+    max_brand_value: max
+    dplus_brand_value: dplus
+    built_at_field: buildDate
+
+clients:
+  - row: "Web"
+    aliases: ["Web / idp Web", "idp Web", "Web (idp)"]
+    platform: web
+    source_repo: wbd-beam-typescript
+    dplus_scheme: base
+
+  - row: "Apple iOS"
+    aliases: ["iOS", "Apple iOS / tvOS", "iPhone"]
+    platform: ios
+    source_repo: wbd-beam-apple
+    dplus_scheme: offset
+
+  - row: "Apple tvOS"
+    aliases: ["tvOS", "Apple TV"]
+    platform: tvos
+    source_repo: wbd-beam-apple
+    dplus_scheme: offset
+
+  - row: "Apple VisionOS"
+    aliases: ["VisionOS", "Vision Pro"]
+    platform: visionos
+    source_repo: wbd-beam-apple
+    dplus_scheme: none  # D+ not shipped on VisionOS; cell is left untouched
+
+  - row: "Android Mobile"
+    aliases: ["Android", "Android Phone / Tablet"]
+    platform: android
+    source_repo: wbd-beam-android
+    dplus_scheme: offset
+
+  - row: "AAOS"
+    aliases: ["Android Automotive", "Android AAOS"]
+    platform: aaos
+    source_repo: wbd-beam-android
+    dplus_scheme: offset
+
+  - row: "Fire Tablet"
+    aliases: ["FireTablet", "Fire Tab", "Amazon Fire Tablet"]
+    platform: firetablet
+    source_repo: wbd-beam-android
+    dplus_scheme: offset
+
+  - row: "Android TV"
+    aliases: ["AndroidTV", "Android TV (Leanback)"]
+    platform: androidtv
+    source_repo: wbd-beam-android
+    dplus_scheme: offset
+
+  - row: "Fire TV"
+    aliases: ["FireTV", "Amazon Fire TV"]
+    platform: firetv
+    source_repo: wbd-beam-android
+    dplus_scheme: offset
+
+  - row: "Vega"
+    aliases: ["Amazon Vega", "Vega OS"]
+    platform: vega
+    source_repo: wbd-beam-android
+    dplus_scheme: offset
+
+  - row: "CDEV"
+    aliases: ["CDEV (Samsung, Bounty Flow, Linux)", "Samsung", "LG", "Linux", "CTV"]
+    platform: cdev
+    source_repo: wbd-beam-typescript
+    dplus_scheme: base
+
+  - row: "Roku"
+    aliases: ["Roku TV", "Roku Player"]
+    platform: roku
+    source_repo: wbd-beam-brightscript
+    dplus_scheme: base
+
+  - row: "Chromecast"
+    aliases: ["Chromecast with Google TV", "Google TV"]
+    platform: chromecast
+    source_repo: wbd-beam-typescript
+    dplus_scheme: base
