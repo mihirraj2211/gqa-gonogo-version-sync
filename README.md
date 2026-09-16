@@ -352,7 +352,7 @@ a saved body, `--output body.xhtml` to dump the storage format it would publish,
 `--release-train` to override the train.
 
 ```bash
-pytest    # 109 tests, no network needed
+pytest    # 115 tests, no network needed
 ```
 
 ### When Confluence answers 404
@@ -375,13 +375,14 @@ with "credential refused", and it masks the token.
 
 ## Known limits
 
-- **Cron drift, and dropped ticks.** Scheduled runs are a request, not a
-  guarantee: they run on shared capacity, arrive minutes late, and GitHub drops
-  queued ones under load. Load peaks on the hour and quarter-hour, so the
-  schedules here sit on odd minutes (`7,22,37,52`) rather than the obvious
-  `*/15`, which in practice can go hours without firing. If ticks still go
-  missing, have the build pipeline POST to the `repository_dispatch` hook, or
-  drive it from a scheduler you control.
+- **GitHub may never fire the schedule at all.** Scheduled runs are a request,
+  not a guarantee: they run on shared capacity and GitHub drops queued ones
+  under load, which peaks on the hour and quarter-hour, so the crons here sit on
+  odd minutes. On this repo the `schedule` event has never fired while manual
+  runs succeed, which is a reported pattern for new private repositories on the
+  Free plan. `tools/run-sync.sh` plus the systemd units beside it drive the same
+  sync from a local timer; the build pipeline can also POST to the
+  `repository_dispatch` hook to have Actions do the work on demand.
 - **Scheduled workflows go dormant.** GitHub disables schedules in a repository
   with no activity for 60 days. The weekly test run keeps this one awake.
 - **Network reachability is not the same as authentication.** GitHub-hosted

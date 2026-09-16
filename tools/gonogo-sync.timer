@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the Go/No-Go version sync every 15 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=15min
+AccuracySec=30s
+# Catch up after a suspend or a reboot rather than waiting a full interval.
+Persistent=true
+
+[Install]
+WantedBy=timers.target
