@@ -13,7 +13,7 @@ rows this repo doesn't know about — is left exactly as it was.
 ## How it works
 
 ```
-cron (*/15) -> GitHub Actions -> build API -> version mapping -> Confluence REST v2
+cron (15 min) -> GitHub Actions -> build API -> version mapping -> Confluence REST v2
 ```
 
 1. **Read the page** (`gonogo/confluence.py`) and take the release train from its
@@ -295,8 +295,8 @@ silently skipping every row.
 
 | Workflow | Schedule | What it does |
 | --- | --- | --- |
-| `sync-signoff-versions.yml` | `*/15 * * * *` | The sync. Manual runs default to a dry run and accept a page id and train. |
-| `build-api-health.yml` | `25 */6 * * *` | Runs the probe. Fails if the API or page is unreachable, or if coverage falls below `MIN_PLATFORMS` / `MIN_ROWS`. |
+| `sync-signoff-versions.yml` | `7,22,37,52 * * * *` | The sync. Manual runs default to a dry run and accept a page id and train. |
+| `build-api-health.yml` | `23 */6 * * *` | Runs the probe. Fails if the API or page is unreachable, or if coverage falls below `MIN_PLATFORMS` / `MIN_ROWS`. |
 | `tests.yml` | `40 5 * * 1` | Tests plus a credential-free rehearsal of the whole pipeline against fixtures. |
 
 The health check exists because the sync can succeed while doing nothing useful:
@@ -375,10 +375,13 @@ with "credential refused", and it masks the token.
 
 ## Known limits
 
-- **Cron drift.** GitHub runs scheduled workflows on shared capacity. `*/15` is a
-  request, not a guarantee — runs are often minutes late and a tick can be
-  skipped at peak times. For a Go/No-Go page this is fine; if you need exact
-  15-minute ticks, a self-hosted cron is the way.
+- **Cron drift, and dropped ticks.** Scheduled runs are a request, not a
+  guarantee: they run on shared capacity, arrive minutes late, and GitHub drops
+  queued ones under load. Load peaks on the hour and quarter-hour, so the
+  schedules here sit on odd minutes (`7,22,37,52`) rather than the obvious
+  `*/15`, which in practice can go hours without firing. If ticks still go
+  missing, have the build pipeline POST to the `repository_dispatch` hook, or
+  drive it from a scheduler you control.
 - **Scheduled workflows go dormant.** GitHub disables schedules in a repository
   with no activity for 60 days. The weekly test run keeps this one awake.
 - **Network reachability is not the same as authentication.** GitHub-hosted
