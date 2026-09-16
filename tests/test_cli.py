@@ -8,8 +8,13 @@ from gonogo import confluence, sync
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / "config" / "clients.yml"
-BUILDS = Path(__file__).parent / "fixtures" / "sample_builds.json"
-PAGE = Path(__file__).parent / "fixtures" / "sample_page.xhtml"
+FIXTURES = Path(__file__).parent / "fixtures"
+PAGE = FIXTURES / "sample_page.xhtml"
+# One file per product, the way the API serves one product per call.
+BUILDS = [
+    f"max={FIXTURES / 'latest_versions_max.json'}",
+    f"dplus={FIXTURES / 'latest_versions_dplus.json'}",
+]
 
 
 class FakeConfluence:
@@ -40,8 +45,12 @@ def stub_confluence(monkeypatch):
     monkeypatch.setenv("ATLASSIAN_API_TOKEN", "test-token")
 
 
+def builds_args(*files: str) -> list[str]:
+    return [arg for path in (files or BUILDS) for arg in ("--builds-file", path)]
+
+
 def run_cli(*extra: str) -> int:
-    return sync.main(["--config", str(CONFIG), "--builds-file", str(BUILDS), *extra])
+    return sync.main(["--config", str(CONFIG), *builds_args(), *extra])
 
 
 def test_dry_run_does_not_publish():
@@ -94,12 +103,7 @@ def test_page_file_runs_without_credentials_and_never_publishes(monkeypatch, tmp
     output = tmp_path / "body.xhtml"
 
     exit_code = sync.main(
-        [
-            "--config", str(CONFIG),
-            "--builds-file", str(BUILDS),
-            "--page-file", str(PAGE),
-            "--output", str(output),
-        ]
+        ["--config", str(CONFIG), *builds_args(), "--page-file", str(PAGE), "--output", str(output)]
     )
 
     assert exit_code == sync.EXIT_OK
@@ -134,8 +138,10 @@ def test_a_concurrent_edit_is_retried_against_the_fresh_page(monkeypatch):
 
 def test_a_feed_on_the_next_train_fails_with_an_explanation(caplog):
     """The 7.12.0 page must refuse 7.13.0 builds, and say why."""
-    builds = Path(__file__).parent / "fixtures" / "sample_builds_next_train.json"
-    exit_code = sync.main(["--config", str(CONFIG), "--builds-file", str(builds), "--page-file", str(PAGE)])
+    next_train = str(FIXTURES / "latest_versions_next_train.json")
+    exit_code = sync.main(
+        ["--config", str(CONFIG), *builds_args(f"max={next_train}"), "--page-file", str(PAGE)]
+    )
 
     assert exit_code == sync.EXIT_ERROR
     assert FakeConfluence.published == []

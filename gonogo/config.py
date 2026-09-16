@@ -51,6 +51,10 @@ class ReleaseConfig:
     # A sign-off page is per train and says so in its title, so the page can
     # name the train it accepts instead of this repo being edited every train.
     train_from_page_title: bool = True
+    # Write the D+ version the source reports rather than one derived from the
+    # MAX version. Derivation stays as the fallback for platforms the D+ feed
+    # does not cover.
+    dplus_from_source: bool = True
 
 
 @dataclass(frozen=True)
@@ -156,6 +160,7 @@ def load_config(path: str | Path) -> Config:
         branch_dplus=release_raw.get("branch_dplus", ""),
         enforce_train=_env_flag("ENFORCE_TRAIN", bool(release_raw.get("enforce_train", True))),
         train_from_page_title=bool(release_raw.get("train_from_page_title", True)),
+        dplus_from_source=bool(release_raw.get("dplus_from_source", True)),
     )
 
     return Config(release=release, confluence=confluence, source=source, clients=tuple(clients))

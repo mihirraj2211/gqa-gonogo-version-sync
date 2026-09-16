@@ -7,18 +7,24 @@ from gonogo import probe
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / "config" / "clients.yml"
-BUILDS = Path(__file__).parent / "fixtures" / "sample_builds.json"
-PAGE = Path(__file__).parent / "fixtures" / "sample_page.xhtml"
+FIXTURES = Path(__file__).parent / "fixtures"
+PAGE = FIXTURES / "sample_page.xhtml"
+FLAT_BUILDS = FIXTURES / "sample_builds.json"
+BUILDS = [
+    f"max={FIXTURES / 'latest_versions_max.json'}",
+    f"dplus={FIXTURES / 'latest_versions_dplus.json'}",
+]
 
 
 def run_probe(*extra: str) -> int:
-    return probe.main(
-        ["--config", str(CONFIG), "--builds-file", str(BUILDS), "--page-file", str(PAGE), *extra]
-    )
+    args = ["--config", str(CONFIG)]
+    for path in BUILDS:
+        args += ["--builds-file", path]
+    return probe.main([*args, "--page-file", str(PAGE), *extra])
 
 
 def test_mapping_is_suggested_from_a_flat_record_list():
-    suggestion = probe.suggest_response_mapping(json.loads(BUILDS.read_text()))
+    suggestion = probe.suggest_response_mapping(json.loads(FLAT_BUILDS.read_text()))
     assert suggestion["records_path"] == ""
     assert suggestion["platform_field"] == "name"
     assert suggestion["version_field"] == "version"
@@ -62,6 +68,15 @@ def test_probe_passes_offline_and_reports_both_ends(capsys):
 def test_probe_fails_when_coverage_drops_below_the_threshold(capsys):
     assert run_probe("--min-rows", "99") == probe.EXIT_ERROR
     assert "expected at least 99" in capsys.readouterr().out
+
+
+def test_the_real_response_shape_is_recognised():
+    payload = json.loads((FIXTURES / "latest_versions_max.json").read_text())
+    suggestion = probe.suggest_response_mapping(payload)
+    assert suggestion["records_path"] == "devices"
+    assert suggestion["platform_field"] == "name"
+    assert suggestion["version_field"] == "version"
+    assert suggestion["built_at_field"] == "date"
 
 
 def test_probe_reports_an_unreachable_build_source(capsys):

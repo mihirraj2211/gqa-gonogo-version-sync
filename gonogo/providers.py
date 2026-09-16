@@ -54,7 +54,7 @@ def build_session(retries: int = 3) -> requests.Session:
 
 
 def _auth_headers(token: str | None, mode: str, header_name: str | None = None) -> dict[str, str]:
-    if not token or mode == "none":
+    if not token or mode in {"none", "query"}:
         return {}
     if mode == "bearer":
         return {"Authorization": f"Bearer {token}"}
@@ -70,6 +70,17 @@ def _auth_headers(token: str | None, mode: str, header_name: str | None = None) 
     if mode == "header":
         return {header_name or "X-Api-Key": token}
     raise ProviderError(f"unsupported auth mode {mode!r}")
+
+
+def _auth_params(token: str | None, mode: str, param_name: str | None = None) -> dict[str, str]:
+    """Tokens that travel in the query string rather than a header.
+
+    The Fuse build API gates every JSON route on ``?token=<gate token>``. These
+    are kept out of every log line and report, unlike the rest of the query.
+    """
+    if not token or mode != "query":
+        return {}
+    return {param_name or "token": token}
 
 
 class _Moment:
@@ -134,10 +145,43 @@ def _dig(payload: Any, path: str) -> Any:
 
 
 def _brand_aliases(response_cfg: dict[str, Any], key: str, default: str) -> tuple[str, ...]:
-    """Read a brand value that may be a single name or a list of aliases."""
+    """Read a brand value that may be a single name or a list of aliases.
+
+    Order is preference order: the dashboard labels one platform's builds
+    ``HBOMAX`` and ``BENELUX``, and only the first of those belongs in the MAX
+    column when a platform reports both.
+    """
     raw = response_cfg.get(key, default)
     values = raw if isinstance(raw, (list, tuple)) else [raw]
     return tuple(normalise_label(str(value)) for value in values if str(value).strip())
+
+
+@dataclass(frozen=True)
+class _Pick:
+    """One candidate version for a cell, with what makes it better than another."""
+
+    version: str
+    rank: int          # position in the brand alias list; lower is preferred
+    live: bool         # the dashboard's LIVE badge, when the payload exposes it
+    built_at: str | None
+
+    def beats(self, other: "_Pick | None") -> bool:
+        if other is None:
+            return True
+        if self.rank != other.rank:
+            return self.rank < other.rank
+        if self.live != other.live:
+            return self.live
+        return True  # same brand and liveness: the later record wins
+
+
+#: What the build API puts in `version` when there is no build to report.
+_STATUS_WORDS = {
+    "n a": "no build matched the tree",
+    "comingsoon": "platform declared but no tree yet",
+    "notbuilt": "no tree for this brand on this platform",
+    "error": "lookup failed upstream",
+}
 
 
 def _read_version(record: dict[str, Any], field: str | None) -> str | None:
@@ -150,43 +194,43 @@ def _read_version(record: dict[str, Any], field: str | None) -> str | None:
     return text if is_version(text) else extract_version(text)
 
 
-def _nested_brand_versions(
-    nested: Any,
-    response_cfg: dict[str, Any],
-    max_brands: tuple[str, ...],
-    dplus_brands: tuple[str, ...],
-) -> tuple[str | None, str | None]:
-    """Read a per-brand block carried on one platform record.
+def _missing_version_reason(record: dict[str, Any], field: str | None) -> tuple[int, str] | None:
+    """Explain an unusable version, so a gap in the table is traceable.
 
-    Covers both ``{"hbomax": "7.13.0.68", "dplus": "21.13.0.68"}`` and
-    ``[{"brand": "HBOMAX", "version": "7.13.0.68"}, ...]``.
+    Returns ``None`` when the field is simply absent, which is normal for the
+    optional per-brand fields and not worth a line in the log. A declared
+    platform with no build yet is expected news; a failed lookup is not.
     """
-    version_field = response_cfg.get("version_field", "version")
-    brand_field = response_cfg.get("brand_field") or "brand"
+    raw = record.get(field) if field else None
+    if raw is None or not str(raw).strip():
+        return None
+    text = str(raw).strip()
+    if record.get("fetch_error"):
+        return logging.WARNING, f"{text}; fetch_error: {record['fetch_error']}"
+    status = _STATUS_WORDS.get(normalise_label(text))
+    if status:
+        return logging.INFO, f"{text} ({status})"
+    return logging.WARNING, f"unparsable version {text!r}"
 
+
+def _brand_blocks(nested: Any, brand_field: str, version_field: str) -> list[tuple[str, dict[str, Any]]]:
+    """Normalise a per-brand block into ``[(brand, record), ...]``.
+
+    Covers both ``{"hbomax": "7.12.0.132", "benelux": "7.12.0.132"}`` and
+    ``[{"brand": "HBOMAX", "version": "7.12.0.132", "isLive": true}, ...]``.
+    """
     if isinstance(nested, dict):
-        pairs = [(normalise_label(str(key)), value) for key, value in nested.items()]
-    elif isinstance(nested, list):
-        pairs = [
+        return [
+            (normalise_label(str(key)), value if isinstance(value, dict) else {version_field: value})
+            for key, value in nested.items()
+        ]
+    if isinstance(nested, list):
+        return [
             (normalise_label(str(item.get(brand_field, ""))), item)
             for item in nested
             if isinstance(item, dict)
         ]
-    else:
-        return None, None
-
-    max_version: str | None = None
-    dplus_version: str | None = None
-    for brand, value in pairs:
-        record = value if isinstance(value, dict) else {version_field: value}
-        version = _read_version(record, version_field)
-        if not version:
-            continue
-        if brand in dplus_brands:
-            dplus_version = version
-        elif brand in max_brands:
-            max_version = version
-    return max_version, dplus_version
+    return []
 
 
 def collect_builds(payload: Any, response_cfg: dict[str, Any], brand: str | None = None) -> list[PlatformBuild]:
@@ -217,7 +261,35 @@ def collect_builds(payload: Any, response_cfg: dict[str, Any], brand: str | None
     else:
         raise ProviderError(f"expected a list or map of builds, got {type(records).__name__}")
 
-    collected: list[PlatformBuild] = []
+    live_field = response_cfg.get("live_field")
+    picks: dict[str, dict[str, _Pick | None]] = {}
+
+    def offer(platform: str, slot: str, pick: _Pick | None) -> None:
+        if pick is None or not pick.version:
+            return
+        slots = picks.setdefault(platform, {"max": None, "dplus": None})
+        if pick.beats(slots[slot]):
+            slots[slot] = pick
+
+    def is_live(record: dict[str, Any]) -> bool:
+        return bool(live_field and record.get(live_field))
+
+    def read(
+        record: dict[str, Any],
+        field: str | None,
+        rank: int,
+        fallback_built_at: str | None,
+        platform: str = "",
+    ) -> _Pick | None:
+        version = _read_version(record, field)
+        if not version:
+            reason = _missing_version_reason(record, field)
+            if reason:
+                log.log(reason[0], "%s: no version to write - %s", platform or "record", reason[1])
+            return None
+        built_at = str(record.get(built_at_field)) if built_at_field and record.get(built_at_field) else None
+        return _Pick(version=version, rank=rank, live=is_live(record), built_at=built_at or fallback_built_at)
+
     for platform_name, record in rows:
         platform = normalise_label(platform_name).replace(" ", "")
         if not platform:
@@ -228,23 +300,19 @@ def collect_builds(payload: Any, response_cfg: dict[str, Any], brand: str | None
         nested = record.get(brand_versions_field) if brand_versions_field else None
 
         if nested:
-            max_version, dplus_version = _nested_brand_versions(nested, response_cfg, max_brands, dplus_brands)
-            if not max_version and not dplus_version:
+            blocks = _brand_blocks(nested, brand_field or "brand", version_field)
+            if not blocks:
                 log.warning("skipping %s: no parsable version in %s", platform, record)
                 continue
-            collected.append(
-                PlatformBuild(
-                    platform=platform,
-                    max_version=max_version or "",
-                    dplus_version=dplus_version,
-                    built_at=built_at,
-                )
-            )
-            continue
-
-        version = _read_version(record, version_field)
-        if not version:
-            log.warning("skipping %s: no parsable version in %s", platform, record)
+            for brand, block in blocks:
+                if brand in dplus_brands:
+                    rank = dplus_brands.index(brand)
+                    offer(platform, "dplus", read(block, version_field, rank, built_at, platform))
+                elif brand in max_brands:
+                    rank = max_brands.index(brand)
+                    offer(platform, "max", read(block, version_field, rank, built_at, platform))
+                else:
+                    log.debug("%s: ignoring unmapped brand %r", platform, brand)
             continue
 
         record_brand = request_brand
@@ -252,17 +320,32 @@ def collect_builds(payload: Any, response_cfg: dict[str, Any], brand: str | None
             record_brand = normalise_label(str(record.get(brand_field)))
 
         if record_brand and record_brand in dplus_brands:
-            collected.append(
-                PlatformBuild(platform=platform, max_version="", dplus_version=version, built_at=built_at)
-            )
+            rank = dplus_brands.index(record_brand)
+            offer(platform, "dplus", read(record, version_field, rank, built_at, platform))
             continue
 
+        # An unlabelled record is MAX, but ranks behind every named brand.
+        rank = max_brands.index(record_brand) if record_brand in max_brands else len(max_brands)
+        offer(platform, "max", read(record, version_field, rank, built_at, platform))
         # Explicit per-brand D+ fields win over a brand-tagged record.
-        dplus = _read_version(record, "dplus_version") or _read_version(record, "dplusVersion")
-        collected.append(
-            PlatformBuild(platform=platform, max_version=version, dplus_version=dplus, built_at=built_at)
-        )
+        for field in ("dplus_version", "dplusVersion"):
+            offer(platform, "dplus", read(record, field, -1, built_at, platform))
 
+    collected: list[PlatformBuild] = []
+    for platform, slots in picks.items():
+        chosen = slots["max"] or slots["dplus"]
+        if chosen is None:
+            continue
+        collected.append(
+            PlatformBuild(
+                platform=platform,
+                max_version=slots["max"].version if slots["max"] else "",
+                dplus_version=slots["dplus"].version if slots["dplus"] else None,
+                built_at=chosen.built_at,
+            )
+        )
+    if rows and not collected:
+        log.warning("no parsable versions in %d record(s)", len(rows))
     return collected
 
 
@@ -307,6 +390,26 @@ def normalise_payload(
     return require_builds(merge_builds(collect_builds(payload, response_cfg, brand)))
 
 
+def _error_text(response: requests.Response) -> str:
+    """Prefer the API's own ``{"error": "..."}`` message over raw body text."""
+    try:
+        payload = response.json()
+    except ValueError:
+        return response.text[:400]
+    if isinstance(payload, dict) and payload.get("error"):
+        return str(payload["error"])
+    return response.text[:400]
+
+
+def _auth_hint(status_code: int, source: SourceConfig) -> str:
+    if status_code != 401:
+        return ""
+    return (
+        f" (set {source.token_env} to a gate token; a JFrog api_token only opens"
+        " the build-url route, not the JSON version routes)"
+    )
+
+
 class HttpJsonProvider:
     """Reads builds from a JSON HTTP endpoint (Fuse build API or Grafana).
 
@@ -327,6 +430,13 @@ class HttpJsonProvider:
                 "documented on the Build Fetch API curl reference page"
             )
         return url
+
+    def _auth_params(self) -> dict[str, str]:
+        return _auth_params(
+            os.environ.get(self.source.token_env),
+            self.source.auth,
+            self.source.options.get("auth_param"),
+        )
 
     def _headers(self) -> dict[str, str]:
         headers = {"Accept": "application/json"}
@@ -358,15 +468,22 @@ class HttpJsonProvider:
             query = {**render_query(self.source.query), **render_query(variant.get("query", {}) or {})}
             body = {**render_query(self.source.body), **render_query(variant.get("body", {}) or {})}
 
+            # Auth that rides in the query string is merged in here and nowhere
+            # else, so the token never reaches a log line or a job summary.
+            params = {**query, **self._auth_params()}
+
             log.info("fetching builds from %s %s %s", method.upper(), url, query or "")
             if method == "post":
                 response = self.session.post(
-                    url, headers=headers, params=query, json=body, timeout=self.source.timeout_seconds
+                    url, headers=headers, params=params, json=body, timeout=self.source.timeout_seconds
                 )
             else:
-                response = self.session.get(url, headers=headers, params=query, timeout=self.source.timeout_seconds)
+                response = self.session.get(url, headers=headers, params=params, timeout=self.source.timeout_seconds)
             if response.status_code >= 400:
-                raise ProviderError(f"build API returned {response.status_code}: {response.text[:400]}")
+                raise ProviderError(
+                    f"build API returned {response.status_code}: {_error_text(response)}"
+                    + _auth_hint(response.status_code, self.source)
+                )
             try:
                 payload = response.json()
             except ValueError as exc:
@@ -442,17 +559,29 @@ class JFrogProvider:
 
 
 class FileProvider:
-    """Reads builds from a local JSON file. Used for dry runs and tests."""
+    """Reads builds from local JSON files. Used for dry runs and tests.
 
-    def __init__(self, source: SourceConfig, path: str | Path):
+    Accepts one file per brand, written ``brand=path``, so an offline rehearsal
+    mirrors an API that serves one product per call.
+    """
+
+    def __init__(self, source: SourceConfig, paths: str | Path | Iterable[str | Path]):
         self.source = source
-        self.path = Path(path)
+        if isinstance(paths, (str, Path)):
+            paths = [paths]
+        self.files: list[tuple[str, Path]] = []
+        for item in paths:
+            brand, separator, path = str(item).partition("=")
+            self.files.append((brand, Path(path)) if separator else ("", Path(item)))
 
     def fetch_raw(self) -> list[tuple[dict[str, Any], Any]]:
-        if not self.path.exists():
-            raise ProviderError(f"builds file not found: {self.path}")
-        description = {"url": str(self.path), "query": {}, "brand": "", "method": "FILE"}
-        return [(description, json.loads(self.path.read_text(encoding="utf-8")))]
+        results: list[tuple[dict[str, Any], Any]] = []
+        for brand, path in self.files:
+            if not path.exists():
+                raise ProviderError(f"builds file not found: {path}")
+            description = {"url": str(path), "query": {}, "brand": brand, "method": "FILE"}
+            results.append((description, json.loads(path.read_text(encoding="utf-8"))))
+        return results
 
     def fetch(self) -> dict[str, PlatformBuild]:
         items: list[PlatformBuild] = []
@@ -461,9 +590,9 @@ class FileProvider:
         return require_builds(merge_builds(items))
 
 
-def get_provider(source: SourceConfig, builds_file: str | Path | None = None):
-    if builds_file:
-        return FileProvider(source, builds_file)
+def get_provider(source: SourceConfig, builds_files: str | Path | Iterable[str | Path] | None = None):
+    if builds_files:
+        return FileProvider(source, builds_files)
     provider = (source.provider or "").lower()
     if provider in {"fuse_api", "grafana", "http"}:
         return HttpJsonProvider(source)

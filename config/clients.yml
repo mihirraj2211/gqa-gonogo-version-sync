@@ -16,6 +16,10 @@ release:
   # -> 7.12.0), so moving to the next train is a page id change, not a code
   # change. Precedence: RELEASE_TRAIN override > page title > `train` above.
   train_from_page_title: true
+  # The API reports D-Plus as its own product, so write what it says. The +14
+  # store-offset derivation below stays as the fallback for platforms the
+  # D-Plus feed does not cover.
+  dplus_from_source: true
 
 confluence:
   domain: wbdstreaming.atlassian.net
@@ -27,55 +31,79 @@ confluence:
     max: ["MAX Version Number", "MAX Version", "MAX Build", "MAX"]
     dplus: ["DPlus Version Number", "D+ Version Number", "DPlus Version", "DPLUS", "D+"]
 
+# Wired to the Fuse build API documented on "Build Fetch API - curl Reference".
+#
+#   FUSE_BUILDS_API_URL=https://sprintedge.gqa.discomax.com/sprintedge/fuse/api/latest-versions
+#   FUSE_API_TOKEN=<gate token>
+#
+# /api/latest-versions returns one card per device for one product, so the two
+# sign-off columns are two calls: product=Max fills MAX, product=D-Plus fills
+# DPlus. TNT-Sports and TVE are other products of the same API and are not part
+# of this sign-off; TVE would additionally need a `brand` (network) parameter.
 source:
   # fuse_api | grafana | jfrog | file
   provider: fuse_api
   url_env: FUSE_BUILDS_API_URL
   token_env: FUSE_API_TOKEN
-  # Auth header sent with the token:
+  # How the token is sent:
+  #   query  -> ?<options.auth_param>=<token>, what this API gates JSON routes on
   #   bearer -> Authorization: Bearer <token>
   #   token  -> Authorization: Token <token>
   #   basic  -> Authorization: Basic base64(<token>), "user:secret" or bare key
   #   jfrog  -> X-JFrog-Art-Api: <token>
   #   header -> a custom header named by options.auth_header
-  #   none   -> no auth header
-  auth: bearer
+  #   none   -> no auth
+  auth: query
+  options:
+    auth_param: token   # a JFrog api_token does not open the JSON routes
   # get | post. POST sends `body` below as JSON, for query-style endpoints.
   method: get
-  # body:
-  #   range: { from: "{yesterday}", to: "{today}" }
   timeout_seconds: 30
-  # Query string sent to the build API. Mirrors the Fuse monitoring dashboard
-  # controls (environment / brand / date). Date tokens are expanded per run:
-  # {today}, {yesterday}, {tomorrow}, {now} and {epoch_ms}, each accepting a
-  # strftime format, e.g. "{today:%d/%m/%Y}" for the dashboard's date box.
+  # Sent on every call. Date tokens are expanded per run: {today}, {yesterday},
+  # {tomorrow}, {now} and {epoch_ms}, each accepting a strftime format.
   query:
-    env: orange
-    # date: "{today:%d/%m/%Y}"
-  # When the API serves one brand per call (the dashboard's MAX / HBOMAX
-  # selector), list the calls here and they are merged by platform. Each entry
-  # may set `query`, `path` or a whole `url`, plus the `brand` it returns.
-  # brand_requests:
-  #   - brand: max
-  #     query: { brand: MAX }
-  #   - brand: dplus
-  #     query: { brand: DPLUS }
+    environment: Orange     # Orange (integration) | Blue (staging) | Green (RC/prod)
+    # The API defaults requested_date to today in its own timezone, which is
+    # usually what you want; set this only to pin a date.
+    # requested_date: "{today}"
+  # One call per entry, merged by device. This is where MAX and D+ come from.
+  brand_requests:
+    - brand: max
+      query: { product: Max }
+    - brand: dplus
+      query: { product: D-Plus }
   # How to read the response payload. `python -m gonogo.probe --show-payload`
   # prints the real payload and a suggested block to paste here.
   response:
-    records_path: ""          # dot path to the list/map of records ("" = root)
+    records_path: devices     # { "devices": [ ...cards... ], "cache_expires_at": ... }
     platform_field: name
     version_field: version
-    brand_field: brand        # omit if the API returns one record per platform
-    # Either value accepts a list of aliases, since the dashboard labels the
-    # MAX brand HBOMAX in places.
-    max_brand_value: [max, hbomax]
-    dplus_brand_value: [dplus, discovery, discoveryplus]
-    # Set when one record carries both brands, e.g.
-    # "versions": {"hbomax": "7.13.0.68", "dplus": "21.13.0.68"}
+    built_at_field: date
+    # No brand_field: the product is chosen per call above, so every record in
+    # a response belongs to that call's brand.
+    #
+    # If a payload ever labels both brands inside one card, these apply. Lists
+    # are preference order, first match wins; a label in neither list is
+    # ignored. The grid shows HBOMAX and BENELUX blocks per card, and only
+    # HBOMAX belongs in the MAX column.
+    max_brand_value: [max, hbomax, benelux]
+    dplus_brand_value: [dplus, d plus, discovery, discoveryplus]
     # brand_versions_field: versions
-    built_at_field: buildDate
+    # Set to the field behind the grid's LIVE badge to prefer the promoted
+    # build over a newer one of the same brand.
+    # live_field: isLive
+    #
+    # `version` may also be N/A, ComingSoon, NotBuilt or Error rather than a
+    # number. Those are reported and skipped, never written to a cell.
 
+# `platform` must be one of the API's supported devices, folded to lowercase
+# without punctuation: firetablet, android, firetv, androidtv, tvos, ios, roku,
+# samsung, lg, xbox, web, playstation4, playstation5.
+#
+# AAOS, Vega, Chromecast and VisionOS are not devices this API builds for, so
+# those rows report "no build reported" every run and their cells are left
+# alone. Keep them listed: if the API gains the device, the row starts filling
+# with no change here.
 clients:
   - row: "Web"
     aliases: ["Web / idp Web", "idp Web", "Web (idp)"]
@@ -137,9 +165,11 @@ clients:
     source_repo: wbd-beam-android
     dplus_scheme: offset
 
+  # The API exposes Samsung and LG as separate devices; the CDEV sign-off row is
+  # driven from the Samsung build. Add an "LG" row below if the table has one.
   - row: "CDEV"
     aliases: ["CDEV (Samsung, Bounty Flow, Linux)", "Samsung", "LG", "Linux", "CTV"]
-    platform: cdev
+    platform: samsung
     source_repo: wbd-beam-typescript
     dplus_scheme: base
 
@@ -154,3 +184,30 @@ clients:
     platform: chromecast
     source_repo: wbd-beam-typescript
     dplus_scheme: base
+
+  # The API also builds LG, Xbox, playstation-4 and playstation-5. These rows are
+  # off until the sign-off table is confirmed to carry them, because a row this
+  # repo doesn't list is never touched - which is the safer default.
+  # - row: "LG"
+  #   aliases: ["LG webOS"]
+  #   platform: lg
+  #   source_repo: wbd-beam-typescript
+  #   dplus_scheme: base
+  #
+  # - row: "Xbox"
+  #   aliases: ["Xbox Series X/S", "Xbox One"]
+  #   platform: xbox
+  #   source_repo: wbd-beam-typescript
+  #   dplus_scheme: base
+  #
+  # - row: "Playstation 4"
+  #   aliases: ["PS4", "playstation-4"]
+  #   platform: playstation4
+  #   source_repo: wbd-beam-typescript
+  #   dplus_scheme: base
+  #
+  # - row: "Playstation 5"
+  #   aliases: ["PS5", "playstation-5"]
+  #   platform: playstation5
+  #   source_repo: wbd-beam-typescript
+  #   dplus_scheme: base

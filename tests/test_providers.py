@@ -104,6 +104,69 @@ def test_one_record_carrying_both_brands_is_read():
     assert builds["roku"].max_version == "7.13.0.133"
 
 
+def test_brand_order_is_preference_order():
+    """A card showing both HBOMAX and BENELUX must put HBOMAX in the MAX column."""
+    payload = {
+        "data": [
+            {"system": "LG", "builds": {"benelux": "7.12.0.120", "hbomax": "7.12.0.132"}},
+            {"system": "Samsung", "builds": {"benelux": "7.12.0.132"}},
+        ]
+    }
+    response = {
+        "records_path": "data",
+        "platform_field": "system",
+        "version_field": "version",
+        "brand_versions_field": "builds",
+        "max_brand_value": ["hbomax", "benelux"],
+        "dplus_brand_value": ["dplus"],
+    }
+    builds = normalise_payload(payload, response)
+    assert builds["lg"].max_version == "7.12.0.132"
+    # Only the fallback brand reported, so the row is still filled rather than skipped.
+    assert builds["samsung"].max_version == "7.12.0.132"
+
+
+def test_unmapped_brands_are_ignored():
+    payload = [{"name": "Xbox", "builds": {"hbomax": "7.12.0.132", "somethingelse": "9.9.9.9"}}]
+    response = {
+        "platform_field": "name",
+        "version_field": "version",
+        "brand_versions_field": "builds",
+        "max_brand_value": ["hbomax"],
+        "dplus_brand_value": ["dplus"],
+    }
+    builds = normalise_payload(payload, response)
+    assert builds["xbox"].max_version == "7.12.0.132"
+    assert builds["xbox"].dplus_version is None
+
+
+def test_the_live_build_wins_over_a_newer_one_of_the_same_brand():
+    """The sign-off page tracks the promoted build, not merely the newest."""
+    payload = [
+        {"name": "Web", "brand": "HBOMAX", "version": "7.12.0.133", "isLive": True},
+        {"name": "Web", "brand": "HBOMAX", "version": "7.12.0.140", "isLive": False},
+    ]
+    response = {
+        "platform_field": "name",
+        "version_field": "version",
+        "brand_field": "brand",
+        "live_field": "isLive",
+        "max_brand_value": ["hbomax"],
+        "dplus_brand_value": ["dplus"],
+    }
+    assert normalise_payload(payload, response)["web"].max_version == "7.12.0.133"
+
+
+def test_without_a_live_field_the_last_record_wins():
+    payload = [
+        {"name": "Web", "brand": "HBOMAX", "version": "7.12.0.133"},
+        {"name": "Web", "brand": "HBOMAX", "version": "7.12.0.140"},
+    ]
+    response = {"platform_field": "name", "version_field": "version", "brand_field": "brand",
+                "max_brand_value": ["hbomax"], "dplus_brand_value": ["dplus"]}
+    assert normalise_payload(payload, response)["web"].max_version == "7.12.0.140"
+
+
 def test_request_level_brand_labels_records_without_a_brand_field():
     payload = [{"name": "iOS", "version": "21.12.0.16"}]
     response = {**RESPONSE, "brand_field": None}

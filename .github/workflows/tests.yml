@@ -27,12 +27,15 @@ jobs:
       - run: pytest -q
 
       # The whole pipeline against fixtures: no tokens, no network, no writes.
+      # One file per product, the way /api/latest-versions is called for real.
       - name: Offline rehearsal
         run: |
           python -m gonogo.sync \
-            --builds-file tests/fixtures/sample_builds.json \
+            --builds-file max=tests/fixtures/latest_versions_max.json \
+            --builds-file dplus=tests/fixtures/latest_versions_dplus.json \
             --page-file tests/fixtures/sample_page.xhtml \
             --output /tmp/body.xhtml
           python -m gonogo.probe \
-            --builds-file tests/fixtures/sample_builds.json \
+            --builds-file max=tests/fixtures/latest_versions_max.json \
+            --builds-file dplus=tests/fixtures/latest_versions_dplus.json \
             --page-file tests/fixtures/sample_page.xhtml

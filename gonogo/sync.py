@@ -70,13 +70,26 @@ def plan_updates(
             continue
 
         values = {"max": str(max_version)}
-        dplus_build = None
+        reported = None
         if build.dplus_version:
             try:
-                dplus_build = parse_version(build.dplus_version).build
+                reported = parse_version(build.dplus_version)
             except VersionError:
                 log.warning("%s: ignoring unparsable D+ version %r", client.row, build.dplus_version)
-        dplus = derive_dplus(str(max_version), client.dplus_scheme, dplus_build)
+
+        derived = derive_dplus(str(max_version), client.dplus_scheme, reported.build if reported else None)
+        dplus = derived
+        # A brand the client does not ship keeps its cell whatever the feed says.
+        if reported and derived and config.release.dplus_from_source:
+            dplus = str(reported)
+            if dplus != derived:
+                log.info(
+                    "%s: writing D+ %s as reported by the source; the %s scheme derives %s",
+                    client.row,
+                    dplus,
+                    client.dplus_scheme,
+                    derived,
+                )
         if dplus:
             values["dplus"] = dplus
         updates[client.row] = values
@@ -280,7 +293,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--config", default="config/clients.yml", help="path to the client mapping config")
     parser.add_argument("--page-id", help="override the Confluence page id from config")
     parser.add_argument("--page-file", help="read the page body from a file instead of Confluence (never publishes)")
-    parser.add_argument("--builds-file", help="read builds from a local JSON file instead of the API")
+    parser.add_argument(
+        "--builds-file",
+        action="append",
+        metavar="[BRAND=]PATH",
+        help="read builds from a local JSON file instead of the API; repeatable as brand=path",
+    )
     parser.add_argument("--release-train", default="", help="train to enforce, e.g. 7.13.0 (overrides the page title)")
     parser.add_argument("--output", help="write the updated storage-format body to this file")
     parser.add_argument("--retries", type=int, default=2, help="publish attempts after a concurrent-edit conflict")

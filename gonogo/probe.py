@@ -304,7 +304,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--config", default="config/clients.yml", help="path to the client mapping config")
     parser.add_argument("--page-id", help="override the Confluence page id from config")
     parser.add_argument("--page-file", help="read the page body from a file instead of Confluence")
-    parser.add_argument("--builds-file", help="read builds from a local JSON file instead of the API")
+    parser.add_argument(
+        "--builds-file",
+        action="append",
+        metavar="[BRAND=]PATH",
+        help="read builds from a local JSON file instead of the API; repeatable as brand=path",
+    )
     parser.add_argument("--release-train", default="", help="train that would be enforced")
     parser.add_argument("--show-payload", action="store_true", help="include the raw API payload in the report")
     parser.add_argument("--full", action="store_true", help="do not truncate the raw payload")

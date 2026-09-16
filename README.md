@@ -42,32 +42,71 @@ cron (*/15) -> GitHub Actions -> build API -> version mapping -> Confluence REST
   Confluence answers 409; the run re-reads and reapplies instead of waiting for
   the next tick.
 
-## Plugging in your build API
+## The build source
 
-The Confluence half is finished and tested. The only thing that varies is the
-shape of the build feed, so nothing about it is hard-coded: `config/clients.yml`
-describes the request and the response, and `gonogo/probe.py` tells you what to
-put there.
+Wired to the Fuse build API documented on *Build Fetch API — curl Reference*
+(child of the Fuse platform version dashboard). Base URL:
 
-With the endpoint from the *Build Fetch API — curl Reference* page (child of the
-Fuse platform version dashboard):
+```
+https://sprintedge.gqa.discomax.com/sprintedge/fuse
+```
+
+The two sign-off columns are two products of the same endpoint, so the sync
+makes two calls to `/api/latest-versions` per run and merges them by device:
+
+```
+GET /api/latest-versions?token=…&environment=Orange&product=Max      -> MAX Version Number
+GET /api/latest-versions?token=…&environment=Orange&product=D-Plus   -> DPlus Version Number
+```
+
+Things worth knowing about this API, all of them handled in `config/clients.yml`:
+
+- **Auth is a query parameter**, `?token=<gate token>`, not a header. A JFrog
+  `api_token` is not a substitute: it only opens `get_latest_build_url`, and
+  every JSON route answers `401 {"error": "Invalid or missing access token."}`
+  without a gate token or a browser session. The sync says as much on a 401.
+- **The token stays out of the logs.** Query auth is merged in at the moment of
+  the request, so neither the log line nor the job summary nor the probe report
+  echoes it.
+- **`version` is not always a version.** It can be `N/A`, `ComingSoon`,
+  `NotBuilt` or `Error`, and a card may carry `fetch_error`. Those are reported
+  and skipped, never written into a cell. A platform with no build yet is logged
+  at info; a failed lookup is a warning.
+- **Environments** are `Orange` (integration), `Blue` (staging) and `Green`
+  (release candidate / prod). The config sends `Orange`.
+- **Devices** are `FireTablet`, `Android`, `FireTV`, `AndroidTV`, `tvOS`, `iOS`,
+  `Roku`, `Samsung`, `LG`, `Xbox`, `Web`, `playstation-4` and `playstation-5`,
+  matched case-insensitively. AAOS, Vega, Chromecast and VisionOS are not
+  devices this API builds, so those rows report "no build reported" and their
+  cells are left alone.
+- **`requested_date`** defaults to today server-side, so the config leaves it
+  unset rather than pinning a date in the runner's timezone.
+- **TNT-Sports and TVE** are other products of the same API and not part of this
+  sign-off. TVE would additionally need a `brand` (network) parameter and has no
+  tree on either PlayStation.
+
+D-Plus arrives as its own product, so its version is written as reported rather
+than derived. The `+14` store-offset derivation below stays as the fallback for
+platforms the D-Plus feed does not cover.
+
+### Checking it before trusting it
 
 ```bash
-export FUSE_BUILDS_API_URL='https://.../builds?env=orange'
-export FUSE_API_TOKEN='...'
+export FUSE_BUILDS_API_URL='https://sprintedge.gqa.discomax.com/sprintedge/fuse/api/latest-versions'
+export FUSE_API_TOKEN='<gate token>'
 export ATLASSIAN_USER_EMAIL='you@wbd.com' ATLASSIAN_API_TOKEN='...'
 
-# 1. See the real payload, a suggested mapping, and whether the page lines up.
+# What the API returned, how it maps, and whether the page's rows line up.
 python -m gonogo.probe --show-payload
 
-# 2. Paste the suggested block into config/clients.yml under source.response,
-#    then confirm every platform and row resolves.
-python -m gonogo.probe
-
-# 3. Rehearse the write, then publish.
+# Rehearse the write, then publish.
 python -m gonogo.sync --dry-run
 python -m gonogo.sync
 ```
+
+If the response shape ever changes, `python -m gonogo.probe --show-payload`
+prints a `source.response` block guessed from the live payload, ready to paste
+into the config.
 
 The probe writes to Confluence never, and prints:
 
@@ -78,29 +117,38 @@ The probe writes to Confluence never, and prints:
 - configured platforms missing from the payload, and keys the config ignores,
 - the page's column headers and client rows, and which config rows matched.
 
-### Request shapes the config already covers
+### Request shapes the config covers
 
 ```yaml
 source:
-  auth: bearer            # bearer | token | basic | jfrog | header | none
+  auth: query             # query | bearer | token | basic | jfrog | header | none
+  options:
+    auth_param: token     # query-string name for the token
   method: get             # post sends `body` as JSON, for query-style endpoints
   query:
-    env: orange
-    date: "{today:%d/%m/%Y}"   # expanded per run, like the dashboard's date box
-  # Only when the API serves one brand per call, like the MAX / HBOMAX selector:
-  brand_requests:
-    - { brand: max,   query: { brand: MAX } }
-    - { brand: dplus, query: { brand: DPLUS } }
+    environment: Orange
+    # requested_date: "{today}"   # tokens expand per run, any strftime format
+  brand_requests:                 # one call per entry, merged by platform
+    - { brand: max,   query: { product: Max } }
+    - { brand: dplus, query: { product: D-Plus } }
   response:
-    records_path: "data.systems"   # dot path to the records ("" = root)
+    records_path: devices         # dot path to the records ("" = root)
     platform_field: name
     version_field: version
-    brand_field: brand             # omit if one record covers both brands
-    max_brand_value: [max, hbomax]
+    built_at_field: date
+    brand_field: brand            # only when one response mixes brands
+    max_brand_value: [max, hbomax, benelux]
     dplus_brand_value: [dplus, discovery]
-    brand_versions_field: versions # when one record nests both brands
-    built_at_field: buildDate
+    brand_versions_field: versions  # when one record nests several brands
+    live_field: isLive              # prefer the promoted build
 ```
+
+Brand lists are preference order. The dashboard cards show a platform's builds
+labelled `HBOMAX` and `BENELUX`, so `max_brand_value: [hbomax, benelux]` reads
+as "HBOMAX in the MAX column, BENELUX only if that's all this platform reports";
+a label in neither list is ignored. With `live_field` set, the build carrying
+the dashboard's `LIVE` badge wins over a newer one of the same brand, because a
+sign-off tracks what was promoted rather than whatever built last.
 
 Understood payloads: a flat list of records, a map keyed by platform, records
 nesting a `{brand: version}` block, one request per brand, and a version
@@ -123,8 +171,8 @@ Switching to Artifactory instead is `BUILD_PROVIDER=jfrog` plus a
 | --- | --- |
 | `ATLASSIAN_USER_EMAIL` | Atlassian account that will edit the page |
 | `ATLASSIAN_API_TOKEN` | [API token](https://id.atlassian.com/manage-profile/security/api-tokens) for that account |
-| `FUSE_BUILDS_API_URL` | Build API endpoint (from the *Build Fetch API — curl Reference* page) |
-| `FUSE_API_TOKEN` | Token for that endpoint, if it needs one |
+| `FUSE_BUILDS_API_URL` | `https://sprintedge.gqa.discomax.com/sprintedge/fuse/api/latest-versions` |
+| `FUSE_API_TOKEN` | SprintEdge gate token, sent as `?token=` (a JFrog token will not do) |
 | `JFROG_URL` / `JFROG_TOKEN` | Only for `BUILD_PROVIDER=jfrog` |
 
 The account behind `ATLASSIAN_API_TOKEN` must have edit permission on the page.
@@ -172,14 +220,38 @@ The health check exists because the sync can succeed while doing nothing useful:
 a renamed row, a platform that stopped reporting or an expiring token all look
 like warnings in a green run. The probe turns those into a red one.
 
+### How close to live this can get
+
+Table cells in a Confluence page are static content: something has to write
+them, so "live" means "written often", and there are only three levers.
+
+1. **Push instead of poll.** The sync also answers to `repository_dispatch`, so
+   a build pipeline that POSTs to the repo gets the page updated within about a
+   minute of a build landing. This is as live as a written page gets, and it
+   costs one run per build rather than 96 a day.
+2. **A shorter schedule.** `*/5` is GitHub's documented floor — a shorter cron
+   is accepted by the YAML parser and silently never fires — and even `*/5` is
+   best effort: runs are delayed at busy times and queued ticks can be dropped.
+   Going from 15 to 5 minutes triples the run count to buy maybe ten minutes of
+   freshness, and every real change is a page revision that notifies watchers.
+3. **Embed the dashboard.** Genuinely live, but then the numbers live in an
+   iframe rather than in the sign-off table, so they can't be signed off
+   alongside the Go/No-Go statuses, and Confluence Cloud admins often disable
+   the HTML and iframe macros anyway.
+
+For a page people read a few times a day around a sign-off, 15 minutes plus the
+dispatch hook is the useful combination.
+
 ## Running it locally
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
 
-# Offline rehearsal: no tokens, no network, no writes.
-python -m gonogo.sync --builds-file tests/fixtures/sample_builds.json \
+# Offline rehearsal: no tokens, no network, no writes. One file per product,
+# the way /api/latest-versions is called for real.
+python -m gonogo.sync --builds-file max=tests/fixtures/latest_versions_max.json \
+                      --builds-file dplus=tests/fixtures/latest_versions_dplus.json \
                       --page-file tests/fixtures/sample_page.xhtml
 
 # Against the real build API and the real page, still without publishing.
@@ -193,10 +265,11 @@ python -m gonogo.sync
 
 Useful flags: `--page-id` to target a different page, `--page-file` to work from
 a saved body, `--output body.xhtml` to dump the storage format it would publish,
-`--builds-file` to replay a payload, `--release-train` to override the train.
+`--builds-file` (repeatable as `brand=path`) to replay payloads,
+`--release-train` to override the train.
 
 ```bash
-pytest    # 72 tests, no network needed
+pytest    # 83 tests, no network needed
 ```
 
 ## Known limits
@@ -208,8 +281,9 @@ pytest    # 72 tests, no network needed
 - **Scheduled workflows go dormant.** GitHub disables schedules in a repository
   with no activity for 60 days. The weekly test run keeps this one awake.
 - **Network reachability is not the same as authentication.** GitHub-hosted
-  runners live on the public internet. If the build API is only reachable from
-  the WBD network, the job needs a self-hosted runner regardless of which tokens
-  it holds.
+  runners live on the public internet. If `sprintedge.gqa.discomax.com` only
+  resolves inside the WBD network, the job needs a self-hosted runner via the
+  `SYNC_RUNNER` variable regardless of which tokens it holds. Check this first:
+  a gate token cannot fix a DNS failure, and the symptom looks the same in a log.
 - **Page history.** Every real change is a page version, attributed to the token
   owner, and will notify page watchers.
