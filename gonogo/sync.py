@@ -110,9 +110,8 @@ def plan_updates(
 
         expected_major = expected_dplus_major(str(max_version), client.dplus_scheme)
         if reported and expected_major is not None:
-            # The source is authoritative for D+, so write it as reported. A
-            # major that disagrees with the row's scheme means the row is mapped
-            # to the wrong platform or the wrong brand, which is worth saying.
+            # Written as reported. A major that disagrees with the row's scheme
+            # means the row is mapped to the wrong platform or brand.
             if reported.major != expected_major:
                 log.warning(
                     "%s: D+ %s is not a %s-scheme version (expected major %d); check dplus_scheme and the platform key",
@@ -257,10 +256,9 @@ def resolve_page(
 ) -> Page:
     """Fetch the page this run should write.
 
-    An explicit id or title wins. Otherwise the page is found by title, and the
-    train comes from the build feed, so the day 7.13.0 starts building the
-    scheduled run moves to the 7.13.0 page on its own. The page still decides
-    which builds it accepts; the feed only decides which page is current.
+    An explicit id or title wins; otherwise the train comes from the build feed
+    and that train's page is found by title, so 7.13.0 needs no change. The feed
+    only picks the page; the page title still decides which builds it accepts.
     """
     if args.page_id:
         return client.get_page(args.page_id)
@@ -409,12 +407,24 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def configure_logging(verbose: bool) -> None:
+    """Turn on debug logging without printing credentials.
+
+    urllib3 logs whole request lines at DEBUG, and the build API takes its token
+    as a query parameter, so --verbose would otherwise put the token in the log
+    and into anything the log gets pasted into.
+    """
+    level = logging.DEBUG if verbose else logging.INFO
+    logging.basicConfig(level=level, format="%(levelname)s %(name)s: %(message)s")
+    # basicConfig does nothing if logging is already configured, so set the
+    # level outright: --verbose has to mean verbose either way.
+    logging.getLogger().setLevel(level)
+    logging.getLogger("urllib3").setLevel(logging.INFO)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(levelname)s %(name)s: %(message)s",
-    )
+    configure_logging(args.verbose)
     try:
         return run(args)
     except (ProviderError, ConfluenceError, VersionError, ValueError, OSError) as exc:

@@ -1,10 +1,8 @@
 """Read-only check of both ends of the sync: the build API and the page.
 
-This is the tool to run first with a new API endpoint or a new sign-off page.
-It never writes to Confluence. It reports what the build API returned, how the
-payload maps onto ``source.response``, and which client rows actually line up
-with the table on the page, so a mapping mistake is visible before a schedule
-starts quietly skipping rows.
+Run this first against a new endpoint or page. It reports the payload, how it
+maps onto ``source.response`` and which client rows line up with the table, so
+a mapping mistake shows up before a schedule starts skipping rows.
 """
 
 from __future__ import annotations
@@ -365,6 +363,7 @@ def main(argv: list[str] | None = None) -> int:
         level=logging.DEBUG if args.verbose else logging.WARNING,
         format="%(levelname)s %(name)s: %(message)s",
     )
+    logging.getLogger("urllib3").setLevel(logging.INFO)
     try:
         return run(args)
     except (ValueError, OSError) as exc:

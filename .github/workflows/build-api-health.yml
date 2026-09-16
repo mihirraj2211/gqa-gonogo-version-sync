@@ -1,12 +1,8 @@
 name: Build API and page health
 
-# The 15-minute sync can succeed while quietly skipping rows: a renamed row, a
-# platform that stopped reporting, or a token about to expire all look like
-# warnings in its log. This probe fails loudly instead, on its own schedule.
-#
-# It also catches the one thing the sync cannot fix by itself: the feed moving
-# to the next train before that train has a sign-off page. The sync keeps the
-# current page updated and warns; this job fails, so somebody creates the page.
+# A renamed row, a platform that stopped reporting or an expiring token are
+# only warnings in the sync's log. This fails on them, including the case the
+# sync cannot fix itself: the feed reaching a train that has no page yet.
 
 on:
   schedule:

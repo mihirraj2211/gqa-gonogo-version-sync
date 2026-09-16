@@ -31,9 +31,8 @@ def _env_flag(name: str, default: bool) -> bool:
 @dataclass(frozen=True)
 class Client:
     row: str
-    #: Platform keys this row covers, in preference order. A sign-off row is
-    #: often one row per app family rather than per device: "Apple" covers iOS
-    #: and tvOS, "LB" covers Android TV and Fire TV.
+    #: Platform keys this row covers, in preference order: a row is per app
+    #: family, so "Apple" covers iOS and tvOS, "LB" Android TV and Fire TV.
     platforms: tuple[str, ...]
     dplus_scheme: str = SCHEME_BASE
     aliases: tuple[str, ...] = ()
@@ -59,9 +58,8 @@ class ReleaseConfig:
     # A sign-off page is per train and says so in its title, so the page can
     # name the train it accepts instead of this repo being edited every train.
     train_from_page_title: bool = True
-    # When the source reports no D+ build for a platform, borrow the MAX build
-    # octet rather than leaving the cell alone. Off by default: iOS reports MAX
-    # 7.12.0.73 against a real D+ of 21.12.0.16, so the guess would be wrong.
+    # Borrow the MAX octet when no D+ build is reported, instead of leaving the
+    # cell alone. Off: iOS is MAX 7.12.0.73 against a real D+ of 21.12.0.16.
     derive_missing_dplus: bool = False
 
 

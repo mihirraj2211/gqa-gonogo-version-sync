@@ -43,6 +43,9 @@ def stub_confluence(monkeypatch):
     monkeypatch.setattr(sync, "ConfluenceClient", FakeConfluence)
     monkeypatch.setenv("ATLASSIAN_USER_EMAIL", "bot@wbd.com")
     monkeypatch.setenv("ATLASSIAN_API_TOKEN", "test-token")
+    # A pinned run, which is how the "Copy of ..." page is targeted; finding a
+    # page by title is covered in test_page_lookup.py.
+    monkeypatch.setenv("CONFLUENCE_PAGE_ID", "4137255661")
 
 
 def builds_args(*files: str) -> list[str]:

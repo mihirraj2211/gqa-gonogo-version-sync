@@ -208,7 +208,7 @@ sync under that name.
 | Variable | Default | What it is |
 | --- | --- | --- |
 | `SYNC_RUNNER` | `ubuntu-latest` | Runner label. Set to a self-hosted label if the build API is internal. |
-| `CONFLUENCE_PAGE_ID` | from config | Page to update, so a new train doesn't need a code change |
+| `CONFLUENCE_PAGE_ID` | unset | Pin one page. Unset = follow the feed's train. Point it at a copy to rehearse |
 | `CONFLUENCE_DOMAIN` | `wbdstreaming.atlassian.net` | Atlassian site |
 | `RELEASE_TRAIN` | from page title | Pin the train instead of reading it from the title |
 | `ENFORCE_TRAIN` | `true` | Set `false` to accept builds from any train |
@@ -239,8 +239,9 @@ row when the table grows one.
 ### Moving to the next train
 
 Each train gets its own sign-off page: 7.12.0 has one, 7.13.0 will get another.
-A scheduled run handles that hand-off without anyone editing anything, as long
-as the `CONFLUENCE_PAGE_ID` variable is left unset:
+The config ships with no `page_id`, so a scheduled run handles that hand-off
+without anyone editing anything, as long as the `CONFLUENCE_PAGE_ID` variable is
+also unset:
 
 1. Fetch the builds and read the newest train in the feed.
 2. Look for that train's page, from `confluence.title_template`
@@ -257,8 +258,13 @@ builds it accepts*. That split is what keeps a 7.13.0 build off a 7.12.0 page.
 
 **To pin a train instead**, set the `RELEASE_TRAIN` variable (or pass it to a
 manual run). That is worth doing while a sign-off is in progress and the feed
-has already moved on, since it stops the run following the builds. Pinning
-`CONFLUENCE_PAGE_ID` pins one page just as firmly.
+has already moved on, since it stops the run following the builds.
+
+**To rehearse against a copy**, set the `CONFLUENCE_PAGE_ID` variable to the
+copy's id. Every run then writes only that page, and deleting the variable is
+the whole go-live step. Worth knowing before you delete it: when both
+`7.12.0 Build GQA App Sign off` and `Copy of 7.12.0 ...` exist, the exact title
+wins, so the sync moves to the real page.
 
 The 6-hourly health job fails when the feed is on a train whose page does not
 exist, because that is the one situation the sync cannot resolve alone:
@@ -280,10 +286,10 @@ template. Pinning `CONFLUENCE_PAGE_ID` keeps the old behaviour exactly.
 ### Which train a run will write
 
 In order of precedence: the `RELEASE_TRAIN` variable (or `--release-train`), then
-the version in the page title, then `release.train` in the config. So moving to
-the next train is a `CONFLUENCE_PAGE_ID` change, not a code change — and if the
-feed has moved on while the page has not, the run fails with that stated
-explicitly rather than silently skipping every row.
+the version in the page title, then `release.train` in the config. Moving to the
+next train needs no change at all once the page exists — and if the feed has
+moved on while a pinned page has not, the run says so explicitly rather than
+silently skipping every row.
 
 ## Scheduled jobs
 
@@ -346,7 +352,7 @@ a saved body, `--output body.xhtml` to dump the storage format it would publish,
 `--release-train` to override the train.
 
 ```bash
-pytest    # 106 tests, no network needed
+pytest    # 109 tests, no network needed
 ```
 
 ### When Confluence answers 404

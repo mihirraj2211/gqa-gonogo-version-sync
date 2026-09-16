@@ -1,131 +1,88 @@
-# Go/No-Go sign-off sync configuration.
-#
-# `clients` maps each row of the Confluence Go/No-Go table to the platform key
-# returned by the build API. Row matching is case- and punctuation-insensitive,
-# so "Apple iOS / tvOS" matches "apple ios/tvos".
+# Maps each row of the Confluence Go/No-Go table to the build API's platform
+# keys. Row and alias matching ignores case and punctuation.
 
 release:
-  # Fallback train, used only when the page title carries no version and no
-  # RELEASE_TRAIN override is set.
+  # Used only when the page title carries no version and RELEASE_TRAIN is unset.
   train: "7.12.0"
   branch_max: "release/beam/7.12.0"
   branch_dplus: "release/dplus/7.12.0"
-  # Refuse to publish a version whose train does not match the resolved train.
   enforce_train: true
-  # Read the train from the page title ("Copy of 7.12.0 Build GQA App Sign off"
-  # -> 7.12.0), so the page decides what it accepts rather than this file.
-  # Precedence: RELEASE_TRAIN override > page title > `train` above.
   train_from_page_title: true
-  # D-Plus is its own product in the API, so its version is written exactly as
-  # reported. When a platform reports no D+ build at all (iOS and tvOS do this
-  # today) the cell is left as it is. Turning this on borrows the MAX build
-  # octet instead, which is a guess: iOS is MAX 7.12.0.73 against a real D+ of
-  # 21.12.0.16, so the guess would publish a build nobody can install.
+  # D+ is its own product, so its version is written as reported and a platform
+  # reporting none (iOS, tvOS) keeps its cell. Turning this on borrows the MAX
+  # octet instead, publishing a build number nobody can install.
   derive_missing_dplus: false
 
-# Each train gets its own sign-off page (7.12.0 has one, 7.13.0 will get its
-# own), so `page_id` pins one page and `title_template` finds a train's page by
-# title. With the template set, moving to the next train is RELEASE_TRAIN=7.13.0
-# and nothing else: no edit here, no new page id to copy.
-#
-# Precedence: --page-id > --page-title > CONFLUENCE_PAGE_ID > title_template.
-# An ambiguous title is an error, never a guess about where to publish.
 confluence:
   domain: wbdstreaming.atlassian.net
-  page_id: "4137255661"  # Copy of 7.12.0 Build GQA App Sign off
+  # Blank: each run finds the current train's page by title, which is what
+  # carries the sync to 7.13.0 on its own. Set CONFLUENCE_PAGE_ID to pin one
+  # page, which is how a "Copy of ..." page is used to rehearse.
+  page_id: ""
   space_key: GQA
-  # {train} is 7.12.0, {train_short} is 7.12. Matched loosely, so the live
-  # "Copy of 7.12.0 Build GQA App Sign off" is found too. Clear page_id above
-  # (or leave CONFLUENCE_PAGE_ID unset) to use this.
+  # {train} is 7.12.0, {train_short} 7.12. Matched loosely, but an exact title
+  # beats a copy, and two equal matches are an error rather than a guess.
   title_template: "{train} Build GQA App Sign off"
   version_message: "Automated build version sync"
-  # Column headers to locate in the sign-off table. First match wins.
+  # First header match wins.
   columns:
     client: ["Client", "Platform", "Client / Platform"]
     max: ["MAX Version Number", "MAX Version", "MAX Build", "MAX"]
     dplus: ["DPlus Version Number", "D+ Version Number", "DPlus Version", "DPLUS", "D+"]
 
-# Wired to the Fuse build API documented on "Build Fetch API - curl Reference".
-#
-#   FUSE_BUILDS_API_URL=https://sprintedge.gqa.discomax.com/sprintedge/fuse/api/latest-versions
-#   FUSE_API_TOKEN=<gate token>
-#
-# /api/latest-versions returns one card per device for one product, so the two
-# sign-off columns are two calls: product=Max fills MAX, product=D-Plus fills
-# DPlus. TNT-Sports and TVE are other products of the same API and are not part
-# of this sign-off; TVE would additionally need a `brand` (network) parameter.
+# FUSE_BUILDS_API_URL=https://sprintedge.gqa.discomax.com/sprintedge/fuse/api/latest-versions
+# /api/latest-versions serves one product per call, so the two sign-off columns
+# are two calls. TNT-Sports and TVE are other products of the same API.
 source:
   # fuse_api | grafana | jfrog | file
   provider: fuse_api
   url_env: FUSE_BUILDS_API_URL
   token_env: FUSE_API_TOKEN
-  # How the token is sent:
-  #   query  -> ?<options.auth_param>=<token>, what this API gates JSON routes on
-  #   bearer -> Authorization: Bearer <token>
-  #   token  -> Authorization: Token <token>
-  #   basic  -> Authorization: Basic base64(<token>), "user:secret" or bare key
-  #   jfrog  -> X-JFrog-Art-Api: <token>
-  #   header -> a custom header named by options.auth_header
-  #   none   -> no auth
+  # query | bearer | token | basic | jfrog | header | none
   auth: query
   options:
     auth_param: token   # a JFrog api_token does not open the JSON routes
-  # get | post. POST sends `body` below as JSON, for query-style endpoints.
+  # get | post, where post sends `body` as JSON.
   method: get
   timeout_seconds: 30
-  # Sent on every call. Date tokens are expanded per run: {today}, {yesterday},
-  # {tomorrow}, {now} and {epoch_ms}, each accepting a strftime format.
+  # Sent on every call. Date tokens {today}, {yesterday}, {tomorrow}, {now} and
+  # {epoch_ms} are expanded per run and accept a strftime format.
   query:
-    # Orange (integration) | Blue (staging) | Green (release candidate / prod).
-    # Blue is what this sign-off tracks; the grid's default view is Orange, so
-    # numbers here will not always match what the dashboard shows on screen.
+    # Orange (integration) | Blue (staging) | Green (RC/prod). Sign-off tracks
+    # Blue; the dashboard opens on Orange, so its numbers can differ on screen.
     environment: Blue
-    # `flavour` (BASE | EMEA | AMER) applies to Swift iOS/tvOS only and is left
-    # unset, which the API reads as AMER.
-    # The API defaults requested_date to today in its own timezone, which is
-    # usually what you want; set this only to pin a date.
-    # requested_date: "{today}"
-  # One call per entry, merged by device. This is where MAX and D+ come from.
+    # requested_date: "{today}"   # defaults to today in the API's timezone
+  # One call per entry, merged by device.
   brand_requests:
     - brand: max
       query: { product: Max }
     - brand: dplus
       query: { product: D-Plus }
-  # How to read the response payload. `python -m gonogo.probe --show-payload`
-  # prints the real payload and a suggested block to paste here.
+  # `python -m gonogo.probe --show-payload` prints the payload and a suggested
+  # block to paste here.
   response:
-    records_path: devices     # { "devices": [ ...cards... ], "cache_expires_at": ... }
+    records_path: devices
     platform_field: name
     version_field: version
     built_at_field: date
-    # No brand_field: the product is chosen per call above, so every record in
-    # a response belongs to that call's brand.
-    #
-    # If a payload ever labels both brands inside one card, these apply. Lists
-    # are preference order, first match wins; a label in neither list is
-    # ignored. The grid shows HBOMAX and BENELUX blocks per card, and only
-    # HBOMAX belongs in the MAX column.
+    # No brand_field: the product is per call, so a response is all one brand.
+    # These apply only if a payload ever labels both brands in one card, in
+    # preference order; a label in neither list is ignored.
     max_brand_value: [max, hbomax, benelux]
     dplus_brand_value: [dplus, d plus, discovery, discoveryplus]
     # brand_versions_field: versions
-    # Set to the field behind the grid's LIVE badge to prefer the promoted
-    # build over a newer one of the same brand.
-    # live_field: isLive
+    # live_field: isLive   # prefer the promoted build over a newer one
     #
-    # `version` may also be N/A, ComingSoon, NotBuilt or Error rather than a
-    # number. Those are reported and skipped, never written to a cell.
+    # A `version` of N/A, ComingSoon, NotBuilt or Error is reported and skipped.
 
-# The six rows of the Go/No-Go table, in page order. A row this file does not
-# list is never touched, so the Notes and Go/No-Go columns and any other row are
-# safe from the sync.
+# The six rows of the table, in page order. Any row not listed here is never
+# touched, which is what keeps the Notes and Go/No-Go columns safe.
 #
-# `platform` is one or more of the API's supported devices, folded to lowercase
-# without punctuation: firetablet, android, firetv, androidtv, tvos, ios, roku,
-# samsung, lg, xbox, web, playstation4, playstation5.
-#
-# A sign-off row is per app family, not per device, so most rows cover several.
-# The first device that reports a build wins, and a run warns when the others
-# disagree, because one row cannot sign off two different numbers.
+# `platform` takes one or more API devices, lowercased without punctuation:
+# firetablet, android, firetv, androidtv, tvos, ios, roku, samsung, lg, xbox,
+# web, playstation4, playstation5. A row signs off an app family rather than a
+# device, so most cover several: the first to report wins, and a run warns when
+# they disagree, because one row cannot sign off two numbers.
 clients:
   - row: "Web"
     aliases: ["Web / idp Web", "idp Web", "Web (idp)"]
@@ -139,35 +96,31 @@ clients:
     source_repo: wbd-beam-brightscript
     dplus_scheme: base
 
-  # iOS and tvOS build from one Swift tree and report the same version today.
-  # VisionOS is not a device this API builds, so it cannot be listed here.
+  # One Swift tree for both. VisionOS is not a device this API builds.
   - row: "Apple"
     aliases: ["Apple iOS", "iOS", "tvOS", "Apple iOS / tvOS", "iPhone", "Apple TV"]
     platform: [ios, tvos]
     source_repo: wbd-beam-apple
     dplus_scheme: offset
 
-  # Android mobile and Fire Tablet share the wbd-beam-kotlin tree.
   - row: "Android"
     aliases: ["Android Mobile", "Android Phone / Tablet", "Fire Tablet"]
     platform: [android, firetablet]
     source_repo: wbd-beam-android
     dplus_scheme: offset
 
-  # LB is leanback: the TV form factor of the same Android app.
+  # Leanback: the TV form factor of the same Android app.
   - row: "LB"
     aliases: ["Leanback", "Android TV", "Fire TV", "AndroidTV", "FireTV"]
     platform: [androidtv, firetv]
     source_repo: wbd-beam-android
     dplus_scheme: offset
 
-  # CDEV covers the CTV devices; the API reports Samsung and LG separately and
-  # they report the same version today.
+  # The CTV devices, reported separately by the API.
   - row: "CDEV"
     aliases: ["CDEV (Samsung, Bounty Flow, Linux)", "Samsung", "LG", "Linux", "CTV"]
     platform: [samsung, lg]
     source_repo: wbd-beam-typescript
     dplus_scheme: base
 
-  # The API also builds xbox, playstation4 and playstation5. The table has no
-  # row for them, and adding one here would do nothing until it does.
+  # xbox, playstation4 and playstation5 are built but have no row to write.

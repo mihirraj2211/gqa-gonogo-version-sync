@@ -59,6 +59,28 @@ def client_for(session) -> ConfluenceClient:
     return ConfluenceClient(config, email="bot@wbd.com", token="token", session=session)
 
 
+def test_the_config_ships_unpinned_so_trains_are_followed():
+    """A page id in the config would freeze the sync on one train for good."""
+    assert load_config(CONFIG).confluence.page_id == ""
+
+
+def test_the_page_id_variable_pins_one_page(monkeypatch):
+    """How the "Copy of ..." page is used for testing, with no code change.
+
+    Deleting the variable is then the whole go-live step, so this is the switch
+    worth pinning down.
+    """
+    monkeypatch.setenv("CONFLUENCE_PAGE_ID", "4137255661")
+    monkeypatch.delenv("RELEASE_TRAIN", raising=False)
+    session = SearchSession([])
+    args = sync.parse_args(["--config", str(CONFIG)])
+
+    sync.resolve_page(client_for(session), load_config(CONFIG), args, builds_on("7.13.0"))
+
+    assert session.reads == ["4137255661"]
+    assert session.searches == [], "a pinned id must not trigger a title search"
+
+
 def test_the_title_template_renders_per_train():
     confluence = load_config(CONFIG).confluence
     assert confluence.title_for("7.13.0") == "7.13.0 Build GQA App Sign off"
@@ -126,6 +148,7 @@ def test_a_configured_page_id_is_used_without_searching(monkeypatch):
     monkeypatch.delenv("RELEASE_TRAIN", raising=False)
     session = SearchSession([])
     config = load_config(CONFIG)
+    config = replace(config, confluence=replace(config.confluence, page_id="4137255661"))
     args = sync.parse_args(["--config", str(CONFIG)])
 
     sync.resolve_page(client_for(session), config, args)

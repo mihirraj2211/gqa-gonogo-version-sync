@@ -1,9 +1,8 @@
 """Confluence storage-format reading, targeted table editing and publishing.
 
-Confluence storage format is XHTML carrying namespaced macro elements such as
-``<ac:structured-macro/>``. It is parsed here as XML rather than HTML: an HTML
-round-trip rewrites self-closing macro tags and Confluence rejects the result,
-which would quietly break every macro on the sign-off page.
+Storage format is XHTML with namespaced macro elements. It is parsed as XML, not
+HTML: an HTML round-trip rewrites self-closing macro tags into something
+Confluence rejects, breaking every macro on the page.
 """
 
 from __future__ import annotations
