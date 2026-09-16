@@ -1,0 +1,10 @@
+{
+  "cache_expires_at": 1789561768.8932312,
+  "devices": [
+    { "name": "Web", "version": "7.12.0.133", "date": "2026-09-12 02:47:11" },
+    { "name": "Roku", "version": "N/A", "date": "" },
+    { "name": "playstation-5", "version": "ComingSoon", "date": "" },
+    { "name": "Samsung", "version": "NotBuilt", "date": "" },
+    { "name": "Xbox", "version": "Error", "date": "", "fetch_error": "forbidden" }
+  ]
+}

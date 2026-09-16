@@ -4,6 +4,7 @@ from pathlib import Path
 from gonogo.config import load_config
 from gonogo.providers import PlatformBuild
 from gonogo.sync import plan_updates, resolve_train, train_mismatch_hint
+from gonogo.versions import SCHEME_NONE
 
 CONFIG = Path(__file__).resolve().parents[1] / "config" / "clients.yml"
 
@@ -21,7 +22,7 @@ def test_offset_and_base_rows_get_the_right_dplus_scheme():
     }
     updates, _ = plan_updates(config, builds)
 
-    assert updates["Apple iOS"] == {"max": "7.12.0.73", "dplus": "21.12.0.16"}
+    assert updates["Apple"] == {"max": "7.12.0.73", "dplus": "21.12.0.16"}
     assert updates["Roku"] == {"max": "7.12.0.49", "dplus": "7.12.0.50"}
     assert updates["Web"] == {"max": "7.12.0.133", "dplus": "7.12.0.96"}
 
@@ -32,11 +33,14 @@ def test_a_missing_dplus_leaves_the_cell_alone(caplog):
     This is the live iOS and tvOS case: the D-Plus product reports no build for
     them, and their real D+ build number is nothing like MAX's, so writing
     anything here would be a guess published on a sign-off page.
+
+    A row covering several devices also disagrees loudly rather than silently:
+    see test_a_row_covering_two_devices_warns_when_they_disagree.
     """
     config = load_config(CONFIG)
     updates, _ = plan_updates(config, {"androidtv": build("androidtv", "7.12.0.43")})
 
-    assert updates["Android TV"] == {"max": "7.12.0.43"}
+    assert updates["LB"] == {"max": "7.12.0.43"}
     assert "leaving that cell as it is" in caplog.text
 
 
@@ -44,7 +48,7 @@ def test_borrowing_the_max_build_can_be_turned_on():
     config = load_config(CONFIG)
     config = replace(config, release=replace(config.release, derive_missing_dplus=True))
     updates, _ = plan_updates(config, {"androidtv": build("androidtv", "7.12.0.43")})
-    assert updates["Android TV"] == {"max": "7.12.0.43", "dplus": "21.12.0.43"}
+    assert updates["LB"] == {"max": "7.12.0.43", "dplus": "21.12.0.43"}
 
 
 def test_a_dplus_version_off_its_scheme_is_flagged(caplog):
@@ -54,15 +58,46 @@ def test_a_dplus_version_off_its_scheme_is_flagged(caplog):
     updates, _ = plan_updates(config, {"androidtv": androidtv})
 
     # Still written as reported: the source is authoritative, but say so loudly.
-    assert updates["Android TV"] == {"max": "7.12.0.43", "dplus": "7.12.0.43"}
+    assert updates["LB"] == {"max": "7.12.0.43", "dplus": "7.12.0.43"}
     assert "not a offset-scheme version" in caplog.text
     assert "expected major 21" in caplog.text
 
 
-def test_visionos_gets_no_dplus_value():
+def test_a_row_that_ships_no_dplus_keeps_its_cell():
+    """No table row is scheme `none` today, so build one to hold the line."""
     config = load_config(CONFIG)
-    updates, _ = plan_updates(config, {"visionos": build("visionos", "7.12.0.73")})
-    assert updates["Apple VisionOS"] == {"max": "7.12.0.73"}
+    apple = config.clients[2]
+    config = replace(config, clients=(replace(apple, dplus_scheme=SCHEME_NONE),))
+    builds = {"ios": build("ios", "7.12.0.73", "21.12.0.16")}
+
+    updates, _ = plan_updates(config, builds)
+    assert updates["Apple"] == {"max": "7.12.0.73"}
+
+
+def test_a_row_covering_two_devices_uses_the_first_that_reported():
+    """The Apple row is iOS then tvOS; LB is Android TV then Fire TV."""
+    config = load_config(CONFIG)
+    builds = {"tvos": build("tvos", "7.12.0.73"), "firetv": build("firetv", "7.12.0.67", "21.12.0.67")}
+
+    updates, _ = plan_updates(config, builds)
+
+    assert updates["Apple"] == {"max": "7.12.0.73"}
+    assert updates["LB"] == {"max": "7.12.0.67", "dplus": "21.12.0.67"}
+
+
+def test_a_row_covering_two_devices_warns_when_they_disagree(caplog):
+    """One row cannot sign off two numbers, so the difference must be audible."""
+    config = load_config(CONFIG)
+    builds = {
+        "androidtv": build("androidtv", "7.12.0.67", "21.12.0.67"),
+        "firetv": build("firetv", "7.12.0.43", "21.12.0.43"),
+    }
+
+    updates, _ = plan_updates(config, builds)
+
+    assert updates["LB"] == {"max": "7.12.0.67", "dplus": "21.12.0.67"}
+    assert "LB covers androidtv and firetv, which disagree" in caplog.text
+    assert "writing androidtv" in caplog.text
 
 
 def test_builds_from_another_train_are_skipped():
@@ -76,7 +111,8 @@ def test_platforms_missing_from_the_feed_are_reported_not_blanked():
     config = load_config(CONFIG)
     updates, skipped = plan_updates(config, {"web": build("web", "7.12.0.133")})
     assert set(updates) == {"Web"}
-    assert any("no build reported for platform 'roku'" in item for item in skipped)
+    assert any("no build reported for roku" in item for item in skipped)
+    assert any("no build reported for ios/tvos" in item for item in skipped)
 
 
 def test_unparsable_versions_are_skipped():

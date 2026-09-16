@@ -1,18 +1,48 @@
 {
+  "cache_expires_at": 1789561768.8932312,
   "devices": [
-    { "name": "FireTablet", "version": "7.12.0.68", "date": "2026-09-16", "url": "https://discovery.jfrog.io/artifactory/wbd-beam-android/orange/max/7.12.0.68/", "artifact_url": "https://discovery.jfrog.io/artifactory/wbd-beam-android/orange/max/7.12.0.68/build.apk" },
-    { "name": "Android", "version": "7.12.0.66", "date": "2026-09-16", "url": "https://discovery.jfrog.io/artifactory/wbd-beam-android/orange/max/7.12.0.66/" },
-    { "name": "FireTV", "version": "7.12.0.43", "date": "2026-09-16", "url": "https://discovery.jfrog.io/artifactory/wbd-beam-android/orange/max/7.12.0.43/" },
-    { "name": "AndroidTV", "version": "7.12.0.43", "date": "2026-09-16", "url": "https://discovery.jfrog.io/artifactory/wbd-beam-android/orange/max/7.12.0.43/" },
-    { "name": "tvOS", "version": "7.12.0.53", "date": "2026-09-16", "swift_multi": true, "flavours": ["BASE", "EMEA", "AMER"] },
-    { "name": "iOS", "version": "7.12.0.73", "date": "2026-09-16", "swift_multi": true, "flavours": ["BASE", "EMEA", "AMER"] },
-    { "name": "Roku", "version": "7.12.0.49", "date": "2026-09-16" },
-    { "name": "Samsung", "version": "7.12.0.132", "date": "2026-09-09" },
-    { "name": "LG", "version": "7.12.0.132", "date": "2026-09-09" },
-    { "name": "Xbox", "version": "7.12.0.132", "date": "2026-09-09" },
-    { "name": "Web", "version": "7.12.0.133", "date": "2026-09-12" },
-    { "name": "playstation-4", "version": "7.12.0.132", "date": "2026-09-09" },
-    { "name": "playstation-5", "version": "ComingSoon", "date": "" }
-  ],
-  "cache_expires_at": 1789561500.0
+    {
+      "name": "FireTablet",
+      "version": "7.12.0.66",
+      "date": "2026-09-16 11:01:59",
+      "url": "https://discovery.jfrog.io/ui/native/wbd-beam-kotlin/stg/beam/7.12.0.66",
+      "artifact_url": "https://discovery.jfrog.io/ui/native/wbd-beam-kotlin/stg/beam/7.12.0.66",
+      "platform_logo": {
+        "asset": "logos/amazon.svg",
+        "id": "firetablet",
+        "label": "Fire Tablet",
+        "mono": "FT",
+        "tint": "#FF9900"
+      }
+    },
+    {
+      "name": "Android",
+      "version": "7.12.0.66",
+      "date": "2026-09-16 11:01:59",
+      "url": "https://discovery.jfrog.io/ui/native/wbd-beam-kotlin/stg/beam/7.12.0.66",
+      "artifact_url": "https://discovery.jfrog.io/ui/native/wbd-beam-kotlin/stg/beam/7.12.0.66",
+      "platform_logo": { "asset": "logos/android.svg", "id": "android", "label": "Android", "mono": "AND" }
+    },
+    {
+      "name": "FireTV",
+      "version": "7.12.0.67",
+      "date": "2026-09-11 01:08:02",
+      "url": "https://discovery.jfrog.io/ui/native/wbd-beam-youi/stable/BEAM-android/7.12.0.67"
+    },
+    {
+      "name": "AndroidTV",
+      "version": "7.12.0.67",
+      "date": "2026-09-11 01:08:02",
+      "url": "https://discovery.jfrog.io/ui/native/wbd-beam-youi/stable/BEAM-android/7.12.0.67"
+    },
+    { "name": "tvOS", "version": "7.12.0.73", "date": "2026-09-10 22:02:08", "swift_multi": true, "flavours": ["BASE", "EMEA", "AMER"] },
+    { "name": "iOS", "version": "7.12.0.73", "date": "2026-09-10 21:59:46", "swift_multi": true, "flavours": ["BASE", "EMEA", "AMER"] },
+    { "name": "Roku", "version": "7.12.0.49", "date": "2026-09-10 01:21:42" },
+    { "name": "Samsung", "version": "7.12.0.132", "date": "2026-09-09 19:45:05" },
+    { "name": "LG", "version": "7.12.0.132", "date": "2026-09-09 19:41:58" },
+    { "name": "Xbox", "version": "7.12.0.132", "date": "2026-09-09 19:56:51" },
+    { "name": "Web", "version": "7.12.0.133", "date": "2026-09-12 02:47:11" },
+    { "name": "playstation-4", "version": "7.12.0.132", "date": "2026-09-09 19:59:11" },
+    { "name": "playstation-5", "version": "7.12.0.132", "date": "2026-09-09 19:57:33" }
+  ]
 }

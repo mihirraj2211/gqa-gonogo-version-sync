@@ -19,12 +19,13 @@ cron (*/15) -> GitHub Actions -> build API -> version mapping -> Confluence REST
 1. **Read the page** (`gonogo/confluence.py`) and take the release train from its
    title, so a 7.13.0 build can never land on a 7.12.0 sign-off page.
 2. **Fetch** the latest build per platform (`gonogo/providers.py`).
-3. **Map** each platform onto a client row and derive the D+ version
-   (`gonogo/versions.py`). MAX stays on the base `7.x.y.build` train. Apple,
-   Android mobile and Android TV take the `+14` store offset and land on
-   `21.x.y.build`; Web, CDEV, Chromecast and Roku stay on the base train. When
-   the build API reports its own D+ build number, that number wins over the
-   derived one, because D+ and MAX rarely share a build count.
+3. **Map** each device onto a client row (`gonogo/config.py`). A sign-off row
+   covers an app family rather than one device, so `Apple` reads iOS then tvOS,
+   `LB` (leanback) reads Android TV then Fire TV, and `CDEV` reads Samsung then
+   LG. The first device that reported wins, and a run warns when the others
+   disagree. Versions are written as the API reports them; the `+14` store
+   offset (`21.x.y.build` on Apple and Android, base `7.x.y.build` on Web, Roku
+   and CDEV) is only used to check that a reported D+ suits its row.
 4. **Update** the table and publish only if something actually changed.
 
 ### Things it deliberately does
@@ -87,8 +88,7 @@ Things worth knowing about this API, all of them handled in `config/clients.yml`
 - **Devices** are `FireTablet`, `Android`, `FireTV`, `AndroidTV`, `tvOS`, `iOS`,
   `Roku`, `Samsung`, `LG`, `Xbox`, `Web`, `playstation-4` and `playstation-5`,
   matched case-insensitively. AAOS, Vega, Chromecast and VisionOS are not
-  devices this API builds, so those rows report "no build reported" and their
-  cells are left alone.
+  devices this API builds, so they cannot back a row.
 - **`requested_date`** defaults to today server-side, so the config leaves it
   unset rather than pinning a date in the runner's timezone.
 - **TNT-Sports and TVE** are other products of the same API and not part of this
@@ -218,9 +218,23 @@ sync under that name.
 ### 3. Point it at your table
 
 `config/clients.yml` holds the release train, the page id, the column headers to
-look for, and the client rows. Row matching ignores case and punctuation, so
-`Apple iOS / tvOS` in the table matches `apple ios tvos` in the config. Rows in
-the table that aren't in the config are never touched.
+look for, and the client rows. It is wired to the six rows of the Go/No-Go table:
+
+| Row | Devices read | D+ scheme |
+| --- | --- | --- |
+| `Web` | `web` | base |
+| `Roku` | `roku` | base |
+| `Apple` | `ios`, `tvos` | offset |
+| `Android` | `android`, `firetablet` | offset |
+| `LB` | `androidtv`, `firetv` | offset |
+| `CDEV` | `samsung`, `lg` | base |
+
+Row matching ignores case and punctuation, so `CDEV (Samsung, Bounty Flow,
+Linux)` in the table matches `CDEV` in the config. Rows in the table that aren't
+in the config are never touched, which covers the Notes and Go/No-Go columns and
+any row added later. A repeated header row, which this table has, is not read as
+a client. The API also builds `xbox`, `playstation4` and `playstation5`; add a
+row when the table grows one.
 
 ### Which train a run will write
 
@@ -291,7 +305,7 @@ a saved body, `--output body.xhtml` to dump the storage format it would publish,
 `--release-train` to override the train.
 
 ```bash
-pytest    # 89 tests, no network needed
+pytest    # 92 tests, no network needed
 ```
 
 ### When Confluence answers 404

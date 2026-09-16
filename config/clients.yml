@@ -103,80 +103,21 @@ source:
     # `version` may also be N/A, ComingSoon, NotBuilt or Error rather than a
     # number. Those are reported and skipped, never written to a cell.
 
-# `platform` must be one of the API's supported devices, folded to lowercase
+# The six rows of the Go/No-Go table, in page order. A row this file does not
+# list is never touched, so the Notes and Go/No-Go columns and any other row are
+# safe from the sync.
+#
+# `platform` is one or more of the API's supported devices, folded to lowercase
 # without punctuation: firetablet, android, firetv, androidtv, tvos, ios, roku,
 # samsung, lg, xbox, web, playstation4, playstation5.
 #
-# AAOS, Vega, Chromecast and VisionOS are not devices this API builds for, so
-# those rows report "no build reported" every run and their cells are left
-# alone. Keep them listed: if the API gains the device, the row starts filling
-# with no change here.
+# A sign-off row is per app family, not per device, so most rows cover several.
+# The first device that reports a build wins, and a run warns when the others
+# disagree, because one row cannot sign off two different numbers.
 clients:
   - row: "Web"
     aliases: ["Web / idp Web", "idp Web", "Web (idp)"]
     platform: web
-    source_repo: wbd-beam-typescript
-    dplus_scheme: base
-
-  - row: "Apple iOS"
-    aliases: ["iOS", "Apple iOS / tvOS", "iPhone"]
-    platform: ios
-    source_repo: wbd-beam-apple
-    dplus_scheme: offset
-
-  - row: "Apple tvOS"
-    aliases: ["tvOS", "Apple TV"]
-    platform: tvos
-    source_repo: wbd-beam-apple
-    dplus_scheme: offset
-
-  - row: "Apple VisionOS"
-    aliases: ["VisionOS", "Vision Pro"]
-    platform: visionos
-    source_repo: wbd-beam-apple
-    dplus_scheme: none  # D+ not shipped on VisionOS; cell is left untouched
-
-  - row: "Android Mobile"
-    aliases: ["Android", "Android Phone / Tablet"]
-    platform: android
-    source_repo: wbd-beam-android
-    dplus_scheme: offset
-
-  - row: "AAOS"
-    aliases: ["Android Automotive", "Android AAOS"]
-    platform: aaos
-    source_repo: wbd-beam-android
-    dplus_scheme: offset
-
-  - row: "Fire Tablet"
-    aliases: ["FireTablet", "Fire Tab", "Amazon Fire Tablet"]
-    platform: firetablet
-    source_repo: wbd-beam-android
-    dplus_scheme: offset
-
-  - row: "Android TV"
-    aliases: ["AndroidTV", "Android TV (Leanback)"]
-    platform: androidtv
-    source_repo: wbd-beam-android
-    dplus_scheme: offset
-
-  - row: "Fire TV"
-    aliases: ["FireTV", "Amazon Fire TV"]
-    platform: firetv
-    source_repo: wbd-beam-android
-    dplus_scheme: offset
-
-  - row: "Vega"
-    aliases: ["Amazon Vega", "Vega OS"]
-    platform: vega
-    source_repo: wbd-beam-android
-    dplus_scheme: offset
-
-  # The API exposes Samsung and LG as separate devices; the CDEV sign-off row is
-  # driven from the Samsung build. Add an "LG" row below if the table has one.
-  - row: "CDEV"
-    aliases: ["CDEV (Samsung, Bounty Flow, Linux)", "Samsung", "LG", "Linux", "CTV"]
-    platform: samsung
     source_repo: wbd-beam-typescript
     dplus_scheme: base
 
@@ -186,35 +127,35 @@ clients:
     source_repo: wbd-beam-brightscript
     dplus_scheme: base
 
-  - row: "Chromecast"
-    aliases: ["Chromecast with Google TV", "Google TV"]
-    platform: chromecast
+  # iOS and tvOS build from one Swift tree and report the same version today.
+  # VisionOS is not a device this API builds, so it cannot be listed here.
+  - row: "Apple"
+    aliases: ["Apple iOS", "iOS", "tvOS", "Apple iOS / tvOS", "iPhone", "Apple TV"]
+    platform: [ios, tvos]
+    source_repo: wbd-beam-apple
+    dplus_scheme: offset
+
+  # Android mobile and Fire Tablet share the wbd-beam-kotlin tree.
+  - row: "Android"
+    aliases: ["Android Mobile", "Android Phone / Tablet", "Fire Tablet"]
+    platform: [android, firetablet]
+    source_repo: wbd-beam-android
+    dplus_scheme: offset
+
+  # LB is leanback: the TV form factor of the same Android app.
+  - row: "LB"
+    aliases: ["Leanback", "Android TV", "Fire TV", "AndroidTV", "FireTV"]
+    platform: [androidtv, firetv]
+    source_repo: wbd-beam-android
+    dplus_scheme: offset
+
+  # CDEV covers the CTV devices; the API reports Samsung and LG separately and
+  # they report the same version today.
+  - row: "CDEV"
+    aliases: ["CDEV (Samsung, Bounty Flow, Linux)", "Samsung", "LG", "Linux", "CTV"]
+    platform: [samsung, lg]
     source_repo: wbd-beam-typescript
     dplus_scheme: base
 
-  # The API also builds LG, Xbox, playstation-4 and playstation-5. These rows are
-  # off until the sign-off table is confirmed to carry them, because a row this
-  # repo doesn't list is never touched - which is the safer default.
-  # - row: "LG"
-  #   aliases: ["LG webOS"]
-  #   platform: lg
-  #   source_repo: wbd-beam-typescript
-  #   dplus_scheme: base
-  #
-  # - row: "Xbox"
-  #   aliases: ["Xbox Series X/S", "Xbox One"]
-  #   platform: xbox
-  #   source_repo: wbd-beam-typescript
-  #   dplus_scheme: base
-  #
-  # - row: "Playstation 4"
-  #   aliases: ["PS4", "playstation-4"]
-  #   platform: playstation4
-  #   source_repo: wbd-beam-typescript
-  #   dplus_scheme: base
-  #
-  # - row: "Playstation 5"
-  #   aliases: ["PS5", "playstation-5"]
-  #   platform: playstation5
-  #   source_repo: wbd-beam-typescript
-  #   dplus_scheme: base
+  # The API also builds xbox, playstation4 and playstation5. The table has no
+  # row for them, and adding one here would do nothing until it does.

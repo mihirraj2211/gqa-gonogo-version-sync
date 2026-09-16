@@ -23,6 +23,7 @@ PAYLOADS = {
     "Max": json.loads((FIXTURES / "latest_versions_max.json").read_text()),
     "D-Plus": json.loads((FIXTURES / "latest_versions_dplus.json").read_text()),
 }
+STATUSES = json.loads((FIXTURES / "latest_versions_statuses.json").read_text())
 
 
 class FakeResponse:
@@ -38,16 +39,18 @@ class FakeResponse:
 class FuseSession:
     """Stands in for the API, keyed on the product parameter."""
 
-    def __init__(self, status_code=200, error=None):
+    def __init__(self, status_code=200, error=None, payloads=None):
         self.calls = []
         self.status_code = status_code
         self.error = error
+        self.payloads = payloads or PAYLOADS
 
     def get(self, url, headers=None, params=None, timeout=None):
         self.calls.append({"url": url, "params": dict(params or {}), "headers": dict(headers or {})})
         if self.error is not None:
             return FakeResponse(self.error, self.status_code)
-        return FakeResponse(PAYLOADS[(params or {})["product"]])
+        product = (params or {})["product"]
+        return FakeResponse(self.payloads.get(product, self.payloads))
 
 
 @pytest.fixture(autouse=True)
@@ -69,8 +72,11 @@ def test_max_and_dplus_are_two_products_merged_per_device():
 
     assert builds["web"].max_version == "7.12.0.133"
     assert builds["web"].dplus_version == "7.12.0.96"
+    assert builds["androidtv"].max_version == "7.12.0.67"
+    assert builds["androidtv"].dplus_version == "21.12.0.67"
+    # iOS builds MAX but reports no D+ at all on this train.
     assert builds["ios"].max_version == "7.12.0.73"
-    assert builds["ios"].dplus_version == "21.12.0.16"
+    assert builds["ios"].dplus_version is None
     assert builds["playstation4"].max_version == "7.12.0.132"
 
 
@@ -89,37 +95,44 @@ def test_the_gate_token_is_sent_as_a_query_parameter():
 
 def test_status_words_are_skipped_rather_than_written(caplog):
     caplog.set_level(logging.INFO, logger="gonogo.providers")
-    builds = fetch(FuseSession())
+    builds = fetch(FuseSession(payloads=STATUSES))
 
-    # playstation-5 reports ComingSoon for MAX, so it has no build at all.
-    assert "playstation5" not in builds
-    # FireTV reports N/A for D+ only, so MAX still lands and D+ stays unset.
-    assert builds["firetv"].max_version == "7.12.0.43"
-    assert builds["firetv"].dplus_version is None
+    # Only the device with a real version survives.
+    assert sorted(builds) == ["web"]
 
     # A platform with no build yet is expected news; a failed lookup is not.
     def messages(level: int) -> str:
         return "\n".join(r.getMessage() for r in caplog.records if r.levelno == level)
 
-    assert "playstation5" in messages(logging.INFO)
     assert "ComingSoon (platform declared but no tree yet)" in messages(logging.INFO)
     assert "N/A (no build matched the tree)" in messages(logging.INFO)
+    assert "NotBuilt (no tree for this brand on this platform)" in messages(logging.INFO)
     assert "xbox" in messages(logging.WARNING)
     assert "fetch_error: forbidden" in messages(logging.WARNING)
+
+
+def test_ios_keeps_its_dplus_cell_when_the_feed_reports_none(caplog):
+    """The live iOS case, and the reason D+ is never derived from MAX."""
+    config = load_config(CONFIG)
+    updates, _ = plan_updates(config, fetch(FuseSession()), train="7.12.0")
+
+    assert updates["Apple"] == {"max": "7.12.0.73"}
+    assert "Apple: no D+ version reported, leaving that cell as it is" in caplog.text
 
 
 def test_reported_dplus_versions_are_written_verbatim():
     config = load_config(CONFIG)
     updates, _ = plan_updates(config, fetch(FuseSession()), train="7.12.0")
 
-    # Samsung D+ is 7.12.0.130 against a MAX of 7.12.0.132: deriving from the
-    # MAX build number would have written the wrong number.
-    assert updates["CDEV"] == {"max": "7.12.0.132", "dplus": "7.12.0.130"}
-    assert updates["Apple iOS"] == {"max": "7.12.0.73", "dplus": "21.12.0.16"}
-    # Fire TV reports N/A for D+, so MAX lands and the D+ cell is left alone.
-    assert updates["Fire TV"] == {"max": "7.12.0.43"}
-    # VisionOS does not ship D+ and is not a device this API builds.
-    assert "Apple VisionOS" not in updates
+    # Samsung is MAX 7.12.0.132 against D+ 7.12.0.90: borrowing the MAX build
+    # octet, as the old fallback did, would have written 7.12.0.132.
+    assert updates["CDEV"] == {"max": "7.12.0.132", "dplus": "7.12.0.90"}
+    assert updates["Web"] == {"max": "7.12.0.133", "dplus": "7.12.0.96"}
+    assert updates["Roku"] == {"max": "7.12.0.49", "dplus": "7.12.0.50"}
+    assert updates["LB"] == {"max": "7.12.0.67", "dplus": "21.12.0.67"}
+    assert updates["Android"] == {"max": "7.12.0.66", "dplus": "21.12.0.66"}
+    # Every row of the table is accounted for, and nothing else is touched.
+    assert sorted(updates) == ["Android", "Apple", "CDEV", "LB", "Roku", "Web"]
 
 
 def test_an_unset_token_fails_before_the_request(monkeypatch):

@@ -195,7 +195,7 @@ def probe_builds(config: Config, args: argparse.Namespace, report: list[str]) ->
     else:
         report += ["No builds parsed from the payload.", ""]
 
-    wanted = {client.platform for client in config.clients}
+    wanted = {key for client in config.clients for key in client.platforms}
     missing = sorted(wanted - set(builds))
     extra = sorted(set(builds) - wanted)
     if missing:

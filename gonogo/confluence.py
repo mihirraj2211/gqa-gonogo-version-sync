@@ -115,6 +115,15 @@ def set_cell_text(cell: etree._Element, value: str) -> None:
     paragraph.text = value
 
 
+def _is_header_row(row: etree._Element) -> bool:
+    """True for a row made only of header cells.
+
+    The sign-off table repeats its header part-way down, which would otherwise
+    be read as a client row labelled "Client".
+    """
+    return bool(row.findall("th")) and not row.findall("td")
+
+
 def _column_index(header_cells: list[etree._Element], candidates: Iterable[str]) -> int | None:
     wanted = [normalise_label(name) for name in candidates]
     headers = [normalise_label(cell_text(cell)) for cell in header_cells]
@@ -186,6 +195,8 @@ def apply_versions(
     matched_rows: set[str] = set()
 
     for row in rows[1:]:
+        if _is_header_row(row):
+            continue
         cells = row.findall("th") + row.findall("td")
         if len(cells) <= indices["client"]:
             continue
@@ -234,6 +245,8 @@ def describe_table(body: str, columns: dict[str, list[str]]) -> TableShape:
 
     labels: list[str] = []
     for row in rows[1:]:
+        if _is_header_row(row):
+            continue
         cells = row.findall("th") + row.findall("td")
         if len(cells) > indices["client"]:
             label = cell_text(cells[indices["client"]])

@@ -31,10 +31,18 @@ def _env_flag(name: str, default: bool) -> bool:
 @dataclass(frozen=True)
 class Client:
     row: str
-    platform: str
+    #: Platform keys this row covers, in preference order. A sign-off row is
+    #: often one row per app family rather than per device: "Apple" covers iOS
+    #: and tvOS, "LB" covers Android TV and Fire TV.
+    platforms: tuple[str, ...]
     dplus_scheme: str = SCHEME_BASE
     aliases: tuple[str, ...] = ()
     source_repo: str = ""
+
+    @property
+    def platform(self) -> str:
+        """The preferred platform key, for messages and reports."""
+        return self.platforms[0] if self.platforms else ""
 
     @property
     def labels(self) -> tuple[str, ...]:
@@ -114,12 +122,19 @@ def load_config(path: str | Path) -> Config:
         scheme = entry.get("dplus_scheme", SCHEME_BASE)
         if scheme not in SCHEMES:
             raise ValueError(f"client {entry.get('row')!r} has unknown dplus_scheme {scheme!r}")
+        raw_platform = entry["platform"]
+        keys = raw_platform if isinstance(raw_platform, (list, tuple)) else [raw_platform]
+        # Folded the same way provider payloads are, so "Fire TV" in either
+        # place lines up with firetv.
+        platforms = tuple(
+            normalise_label(str(key)).replace(" ", "") for key in keys if str(key).strip()
+        )
+        if not platforms:
+            raise ValueError(f"client {entry.get('row')!r} names no platform")
         clients.append(
             Client(
                 row=entry["row"],
-                # Folded the same way provider payloads are, so "Fire TV" in
-                # either place lines up with firetv.
-                platform=normalise_label(str(entry["platform"])).replace(" ", ""),
+                platforms=platforms,
                 dplus_scheme=scheme,
                 aliases=tuple(entry.get("aliases", ())),
                 source_repo=entry.get("source_repo", ""),

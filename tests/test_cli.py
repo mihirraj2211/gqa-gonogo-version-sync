@@ -65,13 +65,20 @@ def test_live_run_publishes_updated_versions(tmp_path):
     assert len(FakeConfluence.published) == 1
     body, message = FakeConfluence.published[0]
     assert "cell(s)" in message
-    # Web and iOS moved; Android Mobile already matched and stays put.
-    assert "<p>7.12.0.133</p>" in body and "<p>7.12.0.96</p>" in body
-    assert "<p>7.12.0.73</p>" in body and "<p>21.12.0.16</p>" in body
-    assert "<p>7.12.0.66</p>" in body and "<p>21.12.0.66</p>" in body
-    # The status macro and the untracked Playstation row survive.
+    # Every row of the table fills from the feed.
+    assert "<p>7.12.0.133</p>" in body and "<p>7.12.0.96</p>" in body    # Web
+    assert "<p>7.12.0.49</p>" in body and "<p>7.12.0.50</p>" in body     # Roku
+    assert "<p>7.12.0.73</p>" in body                                    # Apple
+    assert "<p>7.12.0.66</p>" in body and "<p>21.12.0.66</p>" in body    # Android
+    assert "<p>7.12.0.67</p>" in body and "<p>21.12.0.67</p>" in body    # LB
+    assert "<p>7.12.0.132</p>" in body and "<p>7.12.0.90</p>" in body    # CDEV
+    # Apple reports no D+ build, so that cell keeps its blank rather than
+    # gaining a number borrowed from MAX.
+    assert "<p>21.12.0.73</p>" not in body
+    # The status macro, the Notes column and the untracked Playstation row live.
     assert 'ac:name="status"' in body
-    assert "<p>Playstation</p>" in body
+    assert "<p>Playstation</p>" in body and "<p>7.12.0.10</p>" in body
+    assert "PLAY-128731" in body
     assert output.read_text(encoding="utf-8") == body
 
 
@@ -91,10 +98,11 @@ def test_second_run_against_synced_page_publishes_nothing(monkeypatch):
     assert FakeConfluence.published == []
 
 
-def test_visionos_dplus_cell_is_never_overwritten():
+def test_the_repeated_header_row_is_not_treated_as_a_client():
+    """The table repeats its header mid-way; that row must survive untouched."""
     run_cli()
     body = FakeConfluence.published[0][0]
-    assert "<p>N/A</p>" in body
+    assert body.count("<strong>MAX Version Number</strong>") == 2
 
 
 def test_page_file_runs_without_credentials_and_never_publishes(monkeypatch, tmp_path):

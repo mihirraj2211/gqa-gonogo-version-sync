@@ -62,9 +62,33 @@ def plan_updates(
     train = config.release.train if train is None else train
 
     for client in config.clients:
-        build = builds.get(client.platform)
+        # A row may cover several devices, so take the first that reported and
+        # say so when the others disagree: one row cannot sign off two numbers.
+        build = None
+        for key in client.platforms:
+            candidate = builds.get(key)
+            if candidate is None:
+                continue
+            if build is None:
+                build = candidate
+            elif (candidate.max_version, candidate.dplus_version) != (
+                build.max_version,
+                build.dplus_version,
+            ):
+                log.warning(
+                    "%s covers %s and %s, which disagree (%s / %s against %s / %s); writing %s",
+                    client.row,
+                    build.platform,
+                    key,
+                    build.max_version,
+                    build.dplus_version or "no D+",
+                    candidate.max_version,
+                    candidate.dplus_version or "no D+",
+                    build.platform,
+                )
         if build is None:
-            skipped.append(f"{client.row}: no build reported for platform '{client.platform}'")
+            covered = "/".join(client.platforms)
+            skipped.append(f"{client.row}: no build reported for {covered}")
             continue
         try:
             max_version = parse_version(build.max_version)
