@@ -1,0 +1,62 @@
+name: Build API and page health
+
+# The 15-minute sync can succeed while quietly skipping rows: a renamed row, a
+# platform that stopped reporting, or a token about to expire all look like
+# warnings in its log. This probe fails loudly instead, on its own schedule.
+
+on:
+  schedule:
+    - cron: "25 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      show_payload:
+        description: "Include the raw build API payload in the job summary"
+        type: boolean
+        default: true
+      page_id:
+        description: "Override the Confluence page id (blank = config default)"
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gonogo-health
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ${{ vars.SYNC_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 10
+
+    env:
+      CONFLUENCE_DOMAIN: ${{ vars.CONFLUENCE_DOMAIN || 'wbdstreaming.atlassian.net' }}
+      CONFLUENCE_PAGE_ID: ${{ inputs.page_id || vars.CONFLUENCE_PAGE_ID }}
+      ATLASSIAN_USER_EMAIL: ${{ secrets.ATLASSIAN_USER_EMAIL }}
+      ATLASSIAN_API_TOKEN: ${{ secrets.ATLASSIAN_API_TOKEN }}
+      FUSE_BUILDS_API_URL: ${{ secrets.FUSE_BUILDS_API_URL }}
+      FUSE_API_TOKEN: ${{ secrets.FUSE_API_TOKEN }}
+      JFROG_URL: ${{ secrets.JFROG_URL }}
+      JFROG_TOKEN: ${{ secrets.JFROG_TOKEN }}
+      BUILD_PROVIDER: ${{ vars.BUILD_PROVIDER }}
+      RELEASE_TRAIN: ${{ vars.RELEASE_TRAIN }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Probe build API and sign-off page
+        run: |
+          python -m gonogo.probe \
+            --config config/clients.yml \
+            --min-platforms "${{ vars.MIN_PLATFORMS || 1 }}" \
+            --min-rows "${{ vars.MIN_ROWS || 1 }}" \
+            ${{ (github.event_name != 'workflow_dispatch' || inputs.show_payload) && '--show-payload' || '' }}

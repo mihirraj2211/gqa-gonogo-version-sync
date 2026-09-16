@@ -5,13 +5,17 @@
 # so "Apple iOS / tvOS" matches "apple ios/tvos".
 
 release:
-  # The release train being signed off. Used to reject stale builds from an
-  # older train and to pick the branch when querying the build source.
+  # Fallback train, used only when the page title carries no version and no
+  # RELEASE_TRAIN override is set.
   train: "7.12.0"
   branch_max: "release/beam/7.12.0"
   branch_dplus: "release/dplus/7.12.0"
-  # Refuse to publish a version whose train does not match `train` above.
+  # Refuse to publish a version whose train does not match the resolved train.
   enforce_train: true
+  # Read the train from the page title ("Copy of 7.12.0 Build GQA App Sign off"
+  # -> 7.12.0), so moving to the next train is a page id change, not a code
+  # change. Precedence: RELEASE_TRAIN override > page title > `train` above.
+  train_from_page_title: true
 
 confluence:
   domain: wbdstreaming.atlassian.net
@@ -28,22 +32,48 @@ source:
   provider: fuse_api
   url_env: FUSE_BUILDS_API_URL
   token_env: FUSE_API_TOKEN
-  # Auth header sent with the token: bearer | token | basic | none
+  # Auth header sent with the token:
+  #   bearer -> Authorization: Bearer <token>
+  #   token  -> Authorization: Token <token>
+  #   basic  -> Authorization: Basic base64(<token>), "user:secret" or bare key
+  #   jfrog  -> X-JFrog-Art-Api: <token>
+  #   header -> a custom header named by options.auth_header
+  #   none   -> no auth header
   auth: bearer
+  # get | post. POST sends `body` below as JSON, for query-style endpoints.
+  method: get
+  # body:
+  #   range: { from: "{yesterday}", to: "{today}" }
   timeout_seconds: 30
   # Query string sent to the build API. Mirrors the Fuse monitoring dashboard
-  # controls (environment / brand / date).
+  # controls (environment / brand / date). Date tokens are expanded per run:
+  # {today}, {yesterday}, {tomorrow}, {now} and {epoch_ms}, each accepting a
+  # strftime format, e.g. "{today:%d/%m/%Y}" for the dashboard's date box.
   query:
     env: orange
-  # How to read the response payload. Adjust these field names once the exact
-  # Fuse build API response shape is confirmed.
+    # date: "{today:%d/%m/%Y}"
+  # When the API serves one brand per call (the dashboard's MAX / HBOMAX
+  # selector), list the calls here and they are merged by platform. Each entry
+  # may set `query`, `path` or a whole `url`, plus the `brand` it returns.
+  # brand_requests:
+  #   - brand: max
+  #     query: { brand: MAX }
+  #   - brand: dplus
+  #     query: { brand: DPLUS }
+  # How to read the response payload. `python -m gonogo.probe --show-payload`
+  # prints the real payload and a suggested block to paste here.
   response:
     records_path: ""          # dot path to the list/map of records ("" = root)
     platform_field: name
     version_field: version
     brand_field: brand        # omit if the API returns one record per platform
-    max_brand_value: max
-    dplus_brand_value: dplus
+    # Either value accepts a list of aliases, since the dashboard labels the
+    # MAX brand HBOMAX in places.
+    max_brand_value: [max, hbomax]
+    dplus_brand_value: [dplus, discovery, discoveryplus]
+    # Set when one record carries both brands, e.g.
+    # "versions": {"hbomax": "7.13.0.68", "dplus": "21.13.0.68"}
+    # brand_versions_field: versions
     built_at_field: buildDate
 
 clients:

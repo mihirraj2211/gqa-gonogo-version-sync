@@ -6,6 +6,7 @@ from gonogo.versions import (
     SCHEME_OFFSET,
     VersionError,
     derive_dplus,
+    extract_train,
     extract_version,
     parse_version,
 )
@@ -50,3 +51,13 @@ def test_unknown_scheme_is_rejected():
 def test_extract_version_from_artifact_name():
     assert extract_version("max-android-7.12.0.66-release.apk") == "7.12.0.66"
     assert extract_version("no-version-here.apk") is None
+
+
+def test_extract_train_from_page_titles():
+    assert extract_train("Copy of 7.12.0 Build GQA App Sign off") == "7.12.0"
+    assert extract_train("7.13.0 Build GQA App Sign off") == "7.13.0"
+    assert extract_train("Build GQA App Sign off") is None
+
+
+def test_extract_train_ignores_four_segment_builds():
+    assert extract_train("build 7.12.0.133 promoted") is None

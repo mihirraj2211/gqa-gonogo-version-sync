@@ -1,0 +1,12 @@
+[
+  { "name": "Web", "brand": "HBOMAX", "version": "7.13.0.133", "buildDate": "2026-09-16 15:05:46" },
+  { "name": "Web", "brand": "DPLUS", "version": "7.13.0.96", "buildDate": "2026-09-16 15:05:46" },
+  { "name": "iOS", "brand": "HBOMAX", "version": "7.13.0.109", "buildDate": "2026-09-16 13:01:42" },
+  { "name": "tvOS", "brand": "HBOMAX", "version": "7.13.0.43", "buildDate": "2026-09-16 12:59:53" },
+  { "name": "Android", "brand": "HBOMAX", "version": "7.13.0.68", "buildDate": "2026-09-16 15:05:46" },
+  { "name": "Fire Tablet", "brand": "HBOMAX", "version": "7.13.0.68", "buildDate": "2026-09-16 15:05:46" },
+  { "name": "AndroidTV", "brand": "HBOMAX", "version": "7.13.0.43", "buildDate": "2026-09-16 00:54:11" },
+  { "name": "FireTV", "brand": "HBOMAX", "version": "7.13.0.43", "buildDate": "2026-09-16 00:54:11" },
+  { "name": "Roku", "brand": "HBOMAX", "version": "7.13.0.133", "buildDate": "2026-09-16 08:21:03" },
+  { "name": "CDEV", "brand": "HBOMAX", "version": "7.13.0.44", "buildDate": "2026-09-16 15:05:46" }
+]

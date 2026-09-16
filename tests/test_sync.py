@@ -1,8 +1,9 @@
+from dataclasses import replace
 from pathlib import Path
 
 from gonogo.config import load_config
 from gonogo.providers import PlatformBuild
-from gonogo.sync import plan_updates
+from gonogo.sync import plan_updates, resolve_train, train_mismatch_hint
 
 CONFIG = Path(__file__).resolve().parents[1] / "config" / "clients.yml"
 
@@ -56,3 +57,36 @@ def test_unparsable_versions_are_skipped():
     updates, skipped = plan_updates(config, {"web": build("web", "unknown")})
     assert updates == {}
     assert any("not a 4-segment version" in item for item in skipped)
+
+
+def test_the_page_title_decides_the_train(monkeypatch):
+    monkeypatch.delenv("RELEASE_TRAIN", raising=False)
+    config = load_config(CONFIG)  # config file says 7.12.0
+    assert resolve_train(config, "Copy of 7.13.0 Build GQA App Sign off") == ("7.13.0", "page title")
+
+    # A 7.13.0 page accepts the 7.13.0 builds the dashboard is now serving.
+    updates, _ = plan_updates(config, {"web": build("web", "7.13.0.68")}, train="7.13.0")
+    assert updates["Web"]["max"] == "7.13.0.68"
+
+
+def test_an_explicit_train_overrides_the_page_title(monkeypatch):
+    monkeypatch.setenv("RELEASE_TRAIN", "7.14.0")
+    config = load_config(CONFIG)
+    assert resolve_train(config, "Copy of 7.12.0 Build GQA App Sign off") == ("7.14.0", "override")
+    assert resolve_train(config, "7.12.0 page", override="7.15.0") == ("7.15.0", "override")
+
+
+def test_train_falls_back_to_config_when_the_title_has_none(monkeypatch):
+    monkeypatch.delenv("RELEASE_TRAIN", raising=False)
+    config = load_config(CONFIG)
+    assert resolve_train(config, "Build GQA App Sign off") == ("7.12.0", "config")
+
+    pinned = replace(config, release=replace(config.release, train_from_page_title=False))
+    assert resolve_train(pinned, "Copy of 7.13.0 Build GQA App Sign off") == ("7.12.0", "config")
+
+
+def test_a_whole_train_behind_is_explained_not_just_skipped():
+    builds = {"web": build("web", "7.13.0.68"), "roku": build("roku", "7.13.0.49")}
+    hint = train_mismatch_hint(builds, "7.12.0")
+    assert "7.13.0" in hint and "7.12.0" in hint
+    assert train_mismatch_hint(builds, "7.13.0") == ""

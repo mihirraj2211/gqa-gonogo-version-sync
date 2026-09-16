@@ -2,7 +2,13 @@ from pathlib import Path
 
 import pytest
 
-from gonogo.confluence import TableNotFoundError, apply_versions, parse_storage, serialise_storage
+from gonogo.confluence import (
+    TableNotFoundError,
+    apply_versions,
+    describe_table,
+    parse_storage,
+    serialise_storage,
+)
 
 FIXTURE = Path(__file__).parent / "fixtures" / "sample_page.xhtml"
 COLUMNS = {
@@ -82,3 +88,10 @@ def test_missing_version_columns_raise(body):
 def test_named_entities_survive_parsing(body):
     new_body, _, _ = apply_versions(body, {"Web": {"max": "7.12.0.133"}}, COLUMNS)
     assert "&#160;" in new_body or "&nbsp;" in new_body
+
+
+def test_describe_table_reports_headers_and_rows(body):
+    shape = describe_table(body, COLUMNS)
+    assert shape.headers == ["Client", "MAX Version Number", "DPlus Version Number", "Go / No-Go"]
+    assert shape.row_labels == ["Web", "Apple iOS", "Apple VisionOS", "Android Mobile", "Roku", "Playstation"]
+    assert shape.indices == {"client": 0, "max": 1, "dplus": 2}

@@ -15,6 +15,14 @@ on:
         description: "Override the Confluence page id (blank = config default)"
         type: string
         required: false
+      release_train:
+        description: "Train to enforce, e.g. 7.13.0 (blank = read it from the page title)"
+        type: string
+        required: false
+      verbose:
+        description: "Debug logging"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -31,6 +39,19 @@ jobs:
     runs-on: ${{ vars.SYNC_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 10
 
+    env:
+      CONFLUENCE_DOMAIN: ${{ vars.CONFLUENCE_DOMAIN || 'wbdstreaming.atlassian.net' }}
+      CONFLUENCE_PAGE_ID: ${{ inputs.page_id || vars.CONFLUENCE_PAGE_ID }}
+      ATLASSIAN_USER_EMAIL: ${{ secrets.ATLASSIAN_USER_EMAIL }}
+      ATLASSIAN_API_TOKEN: ${{ secrets.ATLASSIAN_API_TOKEN }}
+      FUSE_BUILDS_API_URL: ${{ secrets.FUSE_BUILDS_API_URL }}
+      FUSE_API_TOKEN: ${{ secrets.FUSE_API_TOKEN }}
+      JFROG_URL: ${{ secrets.JFROG_URL }}
+      JFROG_TOKEN: ${{ secrets.JFROG_TOKEN }}
+      BUILD_PROVIDER: ${{ vars.BUILD_PROVIDER }}
+      RELEASE_TRAIN: ${{ inputs.release_train || vars.RELEASE_TRAIN }}
+      ENFORCE_TRAIN: ${{ vars.ENFORCE_TRAIN }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -42,16 +63,26 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      # Without this, a missing secret fails the same way every 15 minutes with
+      # a message that looks like an API problem rather than a setup problem.
+      - name: Check credentials are configured
+        run: |
+          missing=()
+          [ -n "$ATLASSIAN_USER_EMAIL" ] || missing+=(ATLASSIAN_USER_EMAIL)
+          [ -n "$ATLASSIAN_API_TOKEN" ] || missing+=(ATLASSIAN_API_TOKEN)
+          if [ "$BUILD_PROVIDER" = "jfrog" ]; then
+            [ -n "$JFROG_URL" ] || missing+=(JFROG_URL)
+          else
+            [ -n "$FUSE_BUILDS_API_URL" ] || missing+=(FUSE_BUILDS_API_URL)
+          fi
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing repository secrets: ${missing[*]} (Settings -> Secrets and variables -> Actions)"
+            exit 1
+          fi
+
       - name: Sync sign-off versions
-        env:
-          CONFLUENCE_DOMAIN: ${{ vars.CONFLUENCE_DOMAIN || 'wbdstreaming.atlassian.net' }}
-          CONFLUENCE_PAGE_ID: ${{ inputs.page_id || vars.CONFLUENCE_PAGE_ID }}
-          ATLASSIAN_USER_EMAIL: ${{ secrets.ATLASSIAN_USER_EMAIL }}
-          ATLASSIAN_API_TOKEN: ${{ secrets.ATLASSIAN_API_TOKEN }}
-          FUSE_BUILDS_API_URL: ${{ secrets.FUSE_BUILDS_API_URL }}
-          FUSE_API_TOKEN: ${{ secrets.FUSE_API_TOKEN }}
-          RELEASE_TRAIN: ${{ vars.RELEASE_TRAIN }}
         run: |
           python -m gonogo.sync \
             --config config/clients.yml \
-            ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '--dry-run' || '' }}
+            ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '--dry-run' || '' }} \
+            ${{ (github.event_name == 'workflow_dispatch' && inputs.verbose) && '--verbose' || '' }}

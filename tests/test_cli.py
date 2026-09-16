@@ -86,3 +86,57 @@ def test_visionos_dplus_cell_is_never_overwritten():
     run_cli()
     body = FakeConfluence.published[0][0]
     assert "<p>N/A</p>" in body
+
+
+def test_page_file_runs_without_credentials_and_never_publishes(monkeypatch, tmp_path):
+    monkeypatch.delenv("ATLASSIAN_USER_EMAIL", raising=False)
+    monkeypatch.delenv("ATLASSIAN_API_TOKEN", raising=False)
+    output = tmp_path / "body.xhtml"
+
+    exit_code = sync.main(
+        [
+            "--config", str(CONFIG),
+            "--builds-file", str(BUILDS),
+            "--page-file", str(PAGE),
+            "--output", str(output),
+        ]
+    )
+
+    assert exit_code == sync.EXIT_OK
+    assert FakeConfluence.published == []
+    assert "<p>7.12.0.133</p>" in output.read_text(encoding="utf-8")
+
+
+def test_a_concurrent_edit_is_retried_against_the_fresh_page(monkeypatch):
+    """A 409 means someone else published; re-read and reapply, don't wait 15 minutes."""
+    attempts = {"count": 0}
+    original_init = FakeConfluence.__init__
+
+    def init_with_conflict(self, config, email, token, session=None):
+        original_init(self, config, email, token, session)
+
+        def update_page(page, body, message):
+            attempts["count"] += 1
+            if attempts["count"] == 1:
+                raise confluence.ConflictError("version conflict")
+            FakeConfluence.published.append((body, message))
+            return page.version + 1
+
+        self.update_page = update_page
+
+    monkeypatch.setattr(FakeConfluence, "__init__", init_with_conflict)
+
+    assert run_cli() == sync.EXIT_OK
+    assert attempts["count"] == 2
+    assert len(FakeConfluence.published) == 1
+    assert "<p>7.12.0.133</p>" in FakeConfluence.published[0][0]
+
+
+def test_a_feed_on_the_next_train_fails_with_an_explanation(caplog):
+    """The 7.12.0 page must refuse 7.13.0 builds, and say why."""
+    builds = Path(__file__).parent / "fixtures" / "sample_builds_next_train.json"
+    exit_code = sync.main(["--config", str(CONFIG), "--builds-file", str(builds), "--page-file", str(PAGE)])
+
+    assert exit_code == sync.EXIT_ERROR
+    assert FakeConfluence.published == []
+    assert "7.13.0" in caplog.text and "7.12.0" in caplog.text

@@ -77,3 +77,13 @@ def extract_version(text: str) -> str | None:
     """Pull the first 4-segment version out of free text such as a filename."""
     match = re.search(r"\d+\.\d+\.\d+\.\d+", text or "")
     return match.group(0) if match else None
+
+
+def extract_train(text: str) -> str | None:
+    """Pull a 3-segment train out of free text such as a page title.
+
+    ``Copy of 7.12.0 Build GQA App Sign off`` yields ``7.12.0``. A 4-segment
+    build number is not a train and is ignored.
+    """
+    match = re.search(r"(?<![\d.])(\d+\.\d+\.\d+)(?![\d.])", text or "")
+    return match.group(1) if match else None

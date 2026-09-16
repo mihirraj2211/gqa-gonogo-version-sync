@@ -6,12 +6,22 @@ import argparse
 import logging
 import os
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 from .config import Config, load_config
-from .confluence import CellChange, ConfluenceClient, ConfluenceError, apply_versions
-from .providers import PlatformBuild, ProviderError, get_provider
-from .versions import VersionError, derive_dplus, parse_version
+from .confluence import (
+    CellChange,
+    ConfluenceClient,
+    ConfluenceError,
+    ConflictError,
+    Page,
+    apply_versions,
+    cell_text,
+    parse_storage,
+)
+from .providers import PlatformBuild, ProviderError, get_provider, summarise
+from .versions import VersionError, derive_dplus, extract_train, is_version, parse_version
 
 log = logging.getLogger("gonogo")
 
@@ -19,10 +29,30 @@ EXIT_OK = 0
 EXIT_ERROR = 1
 
 
-def plan_updates(config: Config, builds: dict[str, PlatformBuild]) -> tuple[dict[str, dict[str, str]], list[str]]:
+def resolve_train(config: Config, page_title: str, override: str = "") -> tuple[str, str]:
+    """Decide which release train this run is allowed to write.
+
+    An explicit override wins, then the page title, because a sign-off page is
+    per train and names it: that keeps a 7.13.0 build off a 7.12.0 page without
+    this repo being edited every train.
+    """
+    explicit = (override or os.environ.get("RELEASE_TRAIN", "")).strip()
+    if explicit:
+        return explicit, "override"
+    if config.release.train_from_page_title:
+        detected = extract_train(page_title)
+        if detected:
+            return detected, "page title"
+    return config.release.train, "config"
+
+
+def plan_updates(
+    config: Config, builds: dict[str, PlatformBuild], train: str | None = None
+) -> tuple[dict[str, dict[str, str]], list[str]]:
     """Map fetched builds onto client rows, deriving D+ versions per scheme."""
     updates: dict[str, dict[str, str]] = {}
     skipped: list[str] = []
+    train = config.release.train if train is None else train
 
     for client in config.clients:
         build = builds.get(client.platform)
@@ -35,10 +65,8 @@ def plan_updates(config: Config, builds: dict[str, PlatformBuild]) -> tuple[dict
             skipped.append(f"{client.row}: {exc}")
             continue
 
-        if config.release.enforce_train and config.release.train and max_version.train != config.release.train:
-            skipped.append(
-                f"{client.row}: build {max_version} is not on train {config.release.train}"
-            )
+        if config.release.enforce_train and train and max_version.train != train:
+            skipped.append(f"{client.row}: build {max_version} is not on train {train}")
             continue
 
         values = {"max": str(max_version)}
@@ -65,8 +93,18 @@ def write_step_summary(lines: list[str]) -> None:
         handle.write("\n".join(lines) + "\n")
 
 
-def _summary_lines(changes: list[CellChange], skipped: list[str], unmatched: list[str], published: bool) -> list[str]:
+def _summary_lines(
+    changes: list[CellChange],
+    skipped: list[str],
+    unmatched: list[str],
+    published: bool,
+    context: dict[str, str] | None = None,
+) -> list[str]:
     lines = ["## Go/No-Go version sync", ""]
+    for key, value in (context or {}).items():
+        lines.append(f"- **{key}:** {value}")
+    if context:
+        lines.append("")
     if changes:
         lines.append(f"{'Published' if published else 'Would publish'} {len(changes)} cell update(s):")
         lines.append("")
@@ -82,40 +120,117 @@ def _summary_lines(changes: list[CellChange], skipped: list[str], unmatched: lis
     return lines
 
 
+def train_mismatch_hint(builds: dict[str, PlatformBuild], train: str) -> str:
+    """Explain the common dead end: the feed has moved on to the next train.
+
+    Without this, a 7.12.0 sign-off page against a 7.13.0 feed fails every 15
+    minutes with nothing but "no client rows could be resolved".
+    """
+    if not train:
+        return ""
+    trains = sorted({parse_version(b.max_version).train for b in builds.values() if is_version(b.max_version)})
+    if not trains or train in trains:
+        return ""
+    return (
+        f"; every fetched build is on train {', '.join(trains)} while this page signs off {train}. "
+        "Point CONFLUENCE_PAGE_ID at that train's page, or set RELEASE_TRAIN to override the page title"
+    )
+
+
+def page_from_file(path: str | Path, page_id: str) -> Page:
+    """Load a storage-format body from disk for a credential-free rehearsal.
+
+    The title is taken from the first heading so train detection behaves the
+    same as it does against the live page.
+    """
+    body = Path(path).read_text(encoding="utf-8")
+    title = Path(path).stem
+    root = parse_storage(body)
+    for tag in ("h1", "h2", "h3"):
+        heading = root.find(f".//{tag}")
+        if heading is not None and cell_text(heading):
+            title = cell_text(heading)
+            break
+    return Page(id=page_id, title=title, version=0, body=body)
+
+
+def _publish(
+    client: ConfluenceClient,
+    page: Page,
+    new_body: str,
+    changes: list[CellChange],
+    unmatched: list[str],
+    updates: dict[str, dict[str, str]],
+    columns: dict[str, list[str]],
+    prefix: str,
+    retries: int,
+) -> tuple[int | None, list[CellChange], list[str]]:
+    """Publish, re-reading the page if someone else edited it in the meantime.
+
+    Returns ``(None, ...)`` when a concurrent edit already carries the versions
+    this run wanted to write.
+    """
+    for attempt in range(retries + 1):
+        try:
+            message = f"{prefix} ({len(changes)} cell(s))"
+            return client.update_page(page, new_body, message), changes, unmatched
+        except ConflictError as exc:
+            if attempt == retries:
+                raise
+            log.warning("%s; re-reading page and retrying", exc)
+            page = client.get_page(page.id)
+            new_body, changes, unmatched = apply_versions(page.body, updates, columns)
+            if not changes:
+                return None, changes, unmatched
+
+    raise ConfluenceError("exhausted publish retries")  # pragma: no cover - loop always returns
+
+
 def run(args: argparse.Namespace) -> int:
     config = load_config(args.config)
     if args.page_id:
-        config = Config(
-            release=config.release,
-            confluence=type(config.confluence)(
-                domain=config.confluence.domain,
-                page_id=args.page_id,
-                version_message=config.confluence.version_message,
-                columns=config.confluence.columns,
-            ),
-            source=config.source,
-            clients=config.clients,
+        config = replace(config, confluence=replace(config.confluence, page_id=args.page_id))
+
+    client: ConfluenceClient | None = None
+    if args.page_file:
+        page = page_from_file(args.page_file, config.confluence.page_id)
+        log.info("loaded page body from %s (%r)", args.page_file, page.title)
+    else:
+        client = ConfluenceClient(
+            config.confluence,
+            email=os.environ.get("ATLASSIAN_USER_EMAIL", ""),
+            token=os.environ.get("ATLASSIAN_API_TOKEN", ""),
         )
+        page = client.get_page(config.confluence.page_id)
+        log.info("loaded page %s (%r) at version %d", page.id, page.title, page.version)
+
+    train, train_source = resolve_train(config, page.title, args.release_train)
+    if config.release.enforce_train and not train:
+        log.warning("no release train resolved; builds from any train will be accepted")
+    else:
+        log.info("release train %s (from %s)", train or "(none)", train_source)
 
     provider = get_provider(config.source, args.builds_file)
     builds = provider.fetch()
-    log.info("fetched %d platform build(s)", len(builds))
+    log.info("fetched %d platform build(s): %s", len(builds), summarise(builds.values()))
 
-    updates, skipped = plan_updates(config, builds)
+    updates, skipped = plan_updates(config, builds, train)
     for item in skipped:
         log.warning("%s", item)
-    if not updates:
-        log.error("no client rows could be resolved from the fetched builds")
-        write_step_summary(_summary_lines([], skipped, [], published=False))
-        return EXIT_ERROR
 
-    client = ConfluenceClient(
-        config.confluence,
-        email=os.environ.get("ATLASSIAN_USER_EMAIL", ""),
-        token=os.environ.get("ATLASSIAN_API_TOKEN", ""),
-    )
-    page = client.get_page(config.confluence.page_id)
-    log.info("loaded page %s (%r) at version %d", page.id, page.title, page.version)
+    context = {
+        "Page": f"{page.title} (`{page.id}`)",
+        "Train": f"{train or 'any'} (from {train_source})",
+        "Builds fetched": str(len(builds)),
+    }
+
+    if not updates:
+        hint = train_mismatch_hint(builds, train)
+        log.error("no client rows could be resolved from the fetched builds%s", hint)
+        if hint:
+            context["Problem"] = hint.lstrip("; ")
+        write_step_summary(_summary_lines([], skipped, [], published=False, context=context))
+        return EXIT_ERROR
 
     new_body, changes, unmatched = apply_versions(page.body, updates, config.confluence.columns)
     for item in unmatched:
@@ -127,21 +242,36 @@ def run(args: argparse.Namespace) -> int:
 
     if not changes:
         log.info("no version changes; leaving page at version %d", page.version)
-        write_step_summary(_summary_lines(changes, skipped, unmatched, published=False))
+        write_step_summary(_summary_lines(changes, skipped, unmatched, published=False, context=context))
         return EXIT_OK
 
     for change in changes:
         log.info("change: %s", change)
 
-    if args.dry_run:
-        log.info("dry run: not publishing %d change(s)", len(changes))
-        write_step_summary(_summary_lines(changes, skipped, unmatched, published=False))
+    if client is None or args.dry_run:
+        reason = "no live page" if client is None else "dry run"
+        log.info("%s: not publishing %d change(s)", reason, len(changes))
+        write_step_summary(_summary_lines(changes, skipped, unmatched, published=False, context=context))
         return EXIT_OK
 
-    message = f"{config.confluence.version_message} ({len(changes)} cell(s))"
-    version = client.update_page(page, new_body, message)
+    version, changes, unmatched = _publish(
+        client,
+        page,
+        new_body,
+        changes,
+        unmatched,
+        updates,
+        config.confluence.columns,
+        config.confluence.version_message,
+        args.retries,
+    )
+    if version is None:
+        log.info("a concurrent edit already carries these versions; nothing published")
+        write_step_summary(_summary_lines(changes, skipped, unmatched, published=False, context=context))
+        return EXIT_OK
+
     log.info("published page %s as version %d", page.id, version)
-    write_step_summary(_summary_lines(changes, skipped, unmatched, published=True))
+    write_step_summary(_summary_lines(changes, skipped, unmatched, published=True, context=context))
     return EXIT_OK
 
 
@@ -149,8 +279,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Sync build versions into the GQA Go/No-Go sign-off table")
     parser.add_argument("--config", default="config/clients.yml", help="path to the client mapping config")
     parser.add_argument("--page-id", help="override the Confluence page id from config")
+    parser.add_argument("--page-file", help="read the page body from a file instead of Confluence (never publishes)")
     parser.add_argument("--builds-file", help="read builds from a local JSON file instead of the API")
+    parser.add_argument("--release-train", default="", help="train to enforce, e.g. 7.13.0 (overrides the page title)")
     parser.add_argument("--output", help="write the updated storage-format body to this file")
+    parser.add_argument("--retries", type=int, default=2, help="publish attempts after a concurrent-edit conflict")
     parser.add_argument("--dry-run", action="store_true", help="report changes without publishing")
     parser.add_argument("--verbose", action="store_true", help="enable debug logging")
     return parser.parse_args(argv)
@@ -164,7 +297,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     try:
         return run(args)
-    except (ProviderError, ConfluenceError, VersionError, ValueError) as exc:
+    except (ProviderError, ConfluenceError, VersionError, ValueError, OSError) as exc:
         log.error("%s", exc)
         return EXIT_ERROR
 

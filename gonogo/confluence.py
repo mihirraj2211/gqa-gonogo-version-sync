@@ -59,6 +59,10 @@ class TableNotFoundError(ConfluenceError):
     pass
 
 
+class ConflictError(ConfluenceError):
+    """The page moved on between reading and publishing; re-read and retry."""
+
+
 def _numeric_entities(xhtml: str) -> str:
     """Replace named HTML entities with numeric ones so the XML parser accepts them."""
 
@@ -212,6 +216,37 @@ def apply_versions(
     return serialise_storage(root), changes, unmatched
 
 
+@dataclass(frozen=True)
+class TableShape:
+    """What the sign-off table looks like right now, for config checks."""
+
+    headers: list[str]
+    row_labels: list[str]
+    indices: dict[str, int]
+
+
+def describe_table(body: str, columns: dict[str, list[str]]) -> TableShape:
+    """Report the headers and client rows found on the page."""
+    root = parse_storage(body)
+    table, indices = find_signoff_table(root, columns)
+    rows = table.findall(".//tr")
+    header_cells = rows[0].findall("th") or rows[0].findall("td")
+
+    labels: list[str] = []
+    for row in rows[1:]:
+        cells = row.findall("th") + row.findall("td")
+        if len(cells) > indices["client"]:
+            label = cell_text(cells[indices["client"]])
+            if label:
+                labels.append(label)
+
+    return TableShape(
+        headers=[cell_text(cell) for cell in header_cells],
+        row_labels=labels,
+        indices=indices,
+    )
+
+
 class ConfluenceClient:
     def __init__(self, config: ConfluenceConfig, email: str, token: str, session: requests.Session | None = None):
         if not email or not token:
@@ -259,9 +294,11 @@ class ConfluenceClient:
     def _raise_for_status(response: requests.Response, action: str) -> None:
         if response.status_code < 400:
             return
+        if response.status_code == 409:
+            raise ConflictError(f"{action} hit a version conflict: {response.text[:200]}")
         hint = ""
         if response.status_code in (401, 403):
             hint = " (check the API token and that the account can edit this page)"
-        elif response.status_code == 409:
-            hint = " (page was edited concurrently; the next run will pick it up)"
+        elif response.status_code == 404:
+            hint = " (check the page id, and that the token owner can see the page)"
         raise ConfluenceError(f"{action} failed with {response.status_code}{hint}: {response.text[:400]}")

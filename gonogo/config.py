@@ -20,6 +20,14 @@ def normalise_label(text: str) -> str:
     return _PUNCT_RE.sub(" ", (text or "").lower()).strip()
 
 
+def _env_flag(name: str, default: bool) -> bool:
+    """Read a boolean override, so Actions variables can flip config switches."""
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass(frozen=True)
 class Client:
     row: str
@@ -40,6 +48,9 @@ class ReleaseConfig:
     branch_max: str = ""
     branch_dplus: str = ""
     enforce_train: bool = True
+    # A sign-off page is per train and says so in its title, so the page can
+    # name the train it accepts instead of this repo being edited every train.
+    train_from_page_title: bool = True
 
 
 @dataclass(frozen=True)
@@ -56,10 +67,16 @@ class SourceConfig:
     url_env: str = "FUSE_BUILDS_API_URL"
     token_env: str = "FUSE_API_TOKEN"
     auth: str = "bearer"
+    method: str = "get"
     timeout_seconds: int = 30
     query: dict[str, Any] = field(default_factory=dict)
+    #: JSON body for POST-style build APIs (a Grafana query, for instance).
+    body: dict[str, Any] = field(default_factory=dict)
     response: dict[str, Any] = field(default_factory=dict)
     options: dict[str, Any] = field(default_factory=dict)
+    #: One request per entry, merged by platform, for APIs that serve a single
+    #: brand per call. Empty means a single request.
+    brand_requests: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -123,10 +140,13 @@ def load_config(path: str | Path) -> Config:
         url_env=source_raw.get("url_env", "FUSE_BUILDS_API_URL"),
         token_env=source_raw.get("token_env", "FUSE_API_TOKEN"),
         auth=source_raw.get("auth", "bearer"),
+        method=str(source_raw.get("method", "get")).lower(),
         timeout_seconds=int(source_raw.get("timeout_seconds", 30)),
         query=source_raw.get("query", {}) or {},
+        body=source_raw.get("body", {}) or {},
         response=source_raw.get("response", {}) or {},
         options=source_raw.get("options", {}) or {},
+        brand_requests=tuple(source_raw.get("brand_requests", ()) or ()),
     )
 
     release_raw = raw.get("release", {})
@@ -134,7 +154,8 @@ def load_config(path: str | Path) -> Config:
         train=str(os.environ.get("RELEASE_TRAIN") or release_raw.get("train", "")),
         branch_max=release_raw.get("branch_max", ""),
         branch_dplus=release_raw.get("branch_dplus", ""),
-        enforce_train=bool(release_raw.get("enforce_train", True)),
+        enforce_train=_env_flag("ENFORCE_TRAIN", bool(release_raw.get("enforce_train", True))),
+        train_from_page_title=bool(release_raw.get("train_from_page_title", True)),
     )
 
     return Config(release=release, confluence=confluence, source=source, clients=tuple(clients))
