@@ -239,17 +239,34 @@ row when the table grows one.
 ### Moving to the next train
 
 Each train gets its own sign-off page: 7.12.0 has one, 7.13.0 will get another.
-So the page is found by title rather than pinned by id, and switching trains is
-one variable:
+A scheduled run handles that hand-off without anyone editing anything, as long
+as the `CONFLUENCE_PAGE_ID` variable is left unset:
+
+1. Fetch the builds and read the newest train in the feed.
+2. Look for that train's page, from `confluence.title_template`
+   (`{train} Build GQA App Sign off`) in the `GQA` space.
+3. If it exists, write it. If it doesn't, keep the current train's page updated
+   and warn that the new page needs creating.
+
+So the day 7.13.0 starts building, the next run moves to the 7.13.0 page by
+itself. Titles match loosely, so the live "Copy of 7.12.0 Build GQA App Sign
+off" is found by the 7.12.0 title, and an exact title wins over a copy.
+
+The feed decides *which page is current*; the page title still decides *which
+builds it accepts*. That split is what keeps a 7.13.0 build off a 7.12.0 page.
+
+**To pin a train instead**, set the `RELEASE_TRAIN` variable (or pass it to a
+manual run). That is worth doing while a sign-off is in progress and the feed
+has already moved on, since it stops the run following the builds. Pinning
+`CONFLUENCE_PAGE_ID` pins one page just as firmly.
+
+The 6-hourly health job fails when the feed is on a train whose page does not
+exist, because that is the one situation the sync cannot resolve alone:
 
 ```
-RELEASE_TRAIN=7.13.0     # and leave CONFLUENCE_PAGE_ID unset
+the build feed is on train 7.13.0 but this page signs off 7.12.0: create the
+7.13.0 sign-off page, or set RELEASE_TRAIN to the train to write
 ```
-
-That renders `confluence.title_template` ("{train} Build GQA App Sign off"),
-searches the `GQA` space, and reads the page it finds. Titles match loosely, so
-the live "Copy of 7.12.0 Build GQA App Sign off" is found by the 7.12.0 title,
-and an exact title wins over a copy.
 
 **Two loose matches is an error, not a coin toss.** If a train has both a page
 and a draft copy, the run stops and lists the candidates rather than picking
@@ -329,7 +346,7 @@ a saved body, `--output body.xhtml` to dump the storage format it would publish,
 `--release-train` to override the train.
 
 ```bash
-pytest    # 102 tests, no network needed
+pytest    # 106 tests, no network needed
 ```
 
 ### When Confluence answers 404

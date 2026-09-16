@@ -241,36 +241,73 @@ def _publish(
     raise ConfluenceError("exhausted publish retries")  # pragma: no cover - loop always returns
 
 
-def resolve_page(client: ConfluenceClient, config: Config, args: argparse.Namespace) -> Page:
+def train_from_builds(builds: dict[str, PlatformBuild]) -> str:
+    """The newest train the build feed is producing."""
+    trains = {parse_version(b.max_version).train for b in builds.values() if is_version(b.max_version)}
+    if not trains:
+        return ""
+    return max(trains, key=lambda train: tuple(int(part) for part in train.split(".")))
+
+
+def resolve_page(
+    client: ConfluenceClient,
+    config: Config,
+    args: argparse.Namespace,
+    builds: dict[str, PlatformBuild] | None = None,
+) -> Page:
     """Fetch the page this run should write.
 
-    An explicit id wins. Failing that a title is searched for, which is how a
-    new train works with no change here: 7.13.0 gets its own sign-off page, and
-    naming the train is enough to find it.
+    An explicit id or title wins. Otherwise the page is found by title, and the
+    train comes from the build feed, so the day 7.13.0 starts building the
+    scheduled run moves to the 7.13.0 page on its own. The page still decides
+    which builds it accepts; the feed only decides which page is current.
     """
     if args.page_id:
         return client.get_page(args.page_id)
+    if args.page_title:
+        return client.find_page_by_title(args.page_title)
+    if config.confluence.page_id:
+        return client.get_page(config.confluence.page_id)
 
-    title = args.page_title or ""
-    if not title and not config.confluence.page_id:
-        train, source = resolve_train(config, page_title="", override=args.release_train)
-        if not train:
-            raise ConfluenceError(
-                "no page id and no train to search with: set CONFLUENCE_PAGE_ID, "
-                "or RELEASE_TRAIN so this train's page can be found by title"
-            )
-        title = config.confluence.title_for(train)
-        log.info("looking for the %s sign-off page (train from %s)", train, source)
+    override = (args.release_train or os.environ.get("RELEASE_TRAIN", "")).strip()
+    if override:
+        log.info("looking for the %s sign-off page (train pinned)", override)
+        return client.find_page_by_title(config.confluence.title_for(override))
 
-    if title:
-        return client.find_page_by_title(title)
-    return client.get_page(config.confluence.page_id)
+    feed_train = train_from_builds(builds or {})
+    if feed_train:
+        title = config.confluence.title_for(feed_train)
+        if client.search_pages(title):
+            log.info("the build feed is on train %s; writing that train's page", feed_train)
+            return client.find_page_by_title(title)
+        # The nudge that matters: builds have moved on and nobody has made the
+        # page yet. Keep updating the current one rather than failing.
+        log.warning(
+            "the feed is building train %s but no page titled %r exists yet; "
+            "create it and the next run will pick it up",
+            feed_train,
+            title,
+        )
+
+    if config.release.train:
+        log.info("staying on the configured train %s", config.release.train)
+        return client.find_page_by_title(config.confluence.title_for(config.release.train))
+
+    raise ConfluenceError(
+        "nothing identifies the page to write: set CONFLUENCE_PAGE_ID, or RELEASE_TRAIN, "
+        "or release.train in the config, or make the build feed reachable so its train can be read"
+    )
 
 
 def run(args: argparse.Namespace) -> int:
     config = load_config(args.config)
     if args.page_id:
         config = replace(config, confluence=replace(config.confluence, page_id=args.page_id))
+
+    # Builds first: which page is current follows the train the feed is on.
+    provider = get_provider(config.source, args.builds_file)
+    builds = provider.fetch()
+    log.info("fetched %d platform build(s): %s", len(builds), summarise(builds.values()))
 
     client: ConfluenceClient | None = None
     if args.page_file:
@@ -282,7 +319,7 @@ def run(args: argparse.Namespace) -> int:
             email=os.environ.get("ATLASSIAN_USER_EMAIL", ""),
             token=os.environ.get("ATLASSIAN_API_TOKEN", ""),
         )
-        page = resolve_page(client, config, args)
+        page = resolve_page(client, config, args, builds)
         log.info("loaded page %s (%r) at version %d", page.id, page.title, page.version)
 
     train, train_source = resolve_train(config, page.title, args.release_train)
@@ -290,10 +327,6 @@ def run(args: argparse.Namespace) -> int:
         log.warning("no release train resolved; builds from any train will be accepted")
     else:
         log.info("release train %s (from %s)", train or "(none)", train_source)
-
-    provider = get_provider(config.source, args.builds_file)
-    builds = provider.fetch()
-    log.info("fetched %d platform build(s): %s", len(builds), summarise(builds.values()))
 
     updates, skipped = plan_updates(config, builds, train)
     for item in skipped:

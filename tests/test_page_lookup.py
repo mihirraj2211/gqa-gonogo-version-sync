@@ -13,6 +13,7 @@ import pytest
 from gonogo import sync
 from gonogo.config import load_config
 from gonogo.confluence import ConfluenceClient, ConfluenceError
+from gonogo.providers import PlatformBuild
 
 CONFIG = Path(__file__).resolve().parents[1] / "config" / "clients.yml"
 PAGE_BODY = (Path(__file__).parent / "fixtures" / "sample_page.xhtml").read_text(encoding="utf-8")
@@ -145,6 +146,74 @@ def test_naming_a_train_finds_that_page_when_no_id_is_pinned(monkeypatch):
 
     assert 'title ~ "7.13.0 Build GQA App Sign off"' in session.searches[0]
     assert page.title == "7.13.0 Build GQA App Sign off"
+
+
+def builds_on(train: str) -> dict[str, PlatformBuild]:
+    return {
+        "web": PlatformBuild(platform="web", max_version=f"{train}.133"),
+        "roku": PlatformBuild(platform="roku", max_version=f"{train}.49"),
+    }
+
+
+def test_the_newest_train_in_the_feed_is_detected():
+    mixed = {**builds_on("7.12.0"), "ios": PlatformBuild(platform="ios", max_version="7.13.0.9")}
+    assert sync.train_from_builds(builds_on("7.12.0")) == "7.12.0"
+    assert sync.train_from_builds(mixed) == "7.13.0"
+    # 7.9.0 must not beat 7.13.0 on a string comparison.
+    assert sync.train_from_builds({**builds_on("7.9.0"), **builds_on("7.13.0")}) == "7.13.0"
+    assert sync.train_from_builds({}) == ""
+
+
+def test_a_scheduled_run_follows_the_feed_onto_the_new_page(monkeypatch):
+    """Nobody has to change a variable the day 7.13.0 starts building."""
+    monkeypatch.delenv("RELEASE_TRAIN", raising=False)
+    session = SearchSession([{"id": "4200000000", "title": "7.13.0 Build GQA App Sign off"}])
+    config = load_config(CONFIG)
+    config = replace(config, confluence=replace(config.confluence, page_id=""))
+    args = sync.parse_args(["--config", str(CONFIG)])
+
+    page = sync.resolve_page(client_for(session), config, args, builds_on("7.13.0"))
+
+    assert page.title == "7.13.0 Build GQA App Sign off"
+    assert all('title ~ "7.13.0 Build GQA App Sign off"' in cql for cql in session.searches)
+
+
+def test_a_new_train_without_a_page_keeps_the_current_one(monkeypatch, caplog):
+    """Builds move before the page is made; that is a nudge, not a failure."""
+    monkeypatch.delenv("RELEASE_TRAIN", raising=False)
+
+    class OnlyTheOldPage(SearchSession):
+        def get(self, url, params=None, headers=None, timeout=None):
+            if "content/search" in url:
+                cql = (params or {})["cql"]
+                self.searches.append(cql)
+                hit = {"id": "4137255661", "title": "Copy of 7.12.0 Build GQA App Sign off"}
+                return FakeResponse({"results": [hit] if "7.12.0" in cql else []})
+            return super().get(url, params, headers, timeout)
+
+    session = OnlyTheOldPage([])
+    config = load_config(CONFIG)
+    config = replace(config, confluence=replace(config.confluence, page_id=""))
+    args = sync.parse_args(["--config", str(CONFIG)])
+
+    sync.resolve_page(client_for(session), config, args, builds_on("7.13.0"))
+
+    assert session.reads == ["4137255661"]
+    assert "the feed is building train 7.13.0" in caplog.text
+    assert "no page titled '7.13.0 Build GQA App Sign off' exists yet" in caplog.text
+
+
+def test_a_pinned_train_ignores_what_the_feed_is_building(monkeypatch):
+    """A sign-off in progress must not be dragged onto the next train."""
+    monkeypatch.setenv("RELEASE_TRAIN", "7.12.0")
+    session = SearchSession([{"id": "4137255661", "title": "Copy of 7.12.0 Build GQA App Sign off"}])
+    config = load_config(CONFIG)
+    config = replace(config, confluence=replace(config.confluence, page_id=""))
+    args = sync.parse_args(["--config", str(CONFIG)])
+
+    sync.resolve_page(client_for(session), config, args, builds_on("7.13.0"))
+
+    assert 'title ~ "7.12.0 Build GQA App Sign off"' in session.searches[0]
 
 
 def test_an_explicit_title_beats_a_pinned_id():

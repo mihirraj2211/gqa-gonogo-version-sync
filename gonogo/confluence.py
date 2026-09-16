@@ -285,13 +285,12 @@ class ConfluenceClient:
             body=data["body"]["storage"]["value"],
         )
 
-    def find_page_by_title(self, title: str) -> Page:
-        """Find a train's sign-off page by title.
+    def search_pages(self, title: str) -> list[dict[str, Any]]:
+        """Candidate pages for a title: zero or one, never a guess.
 
-        Each train gets its own page, so this keeps a new train from needing a
-        config change. Titles are matched loosely because the live page is named
-        "Copy of 7.12.0 ...", but an ambiguous match is an error rather than a
-        guess: publishing to the wrong sign-off page is worse than not running.
+        Titles are matched loosely because the live page is named "Copy of
+        7.12.0 ...", and an exact title beats a copy. More than one loose match
+        raises: publishing to the wrong sign-off page is worse than not running.
         """
         clauses = ["type = page", f'title ~ "{title}"']
         if self.config.space_key:
@@ -311,19 +310,23 @@ class ConfluenceClient:
         exact = [item for item in results if normalise_label(item.get("title", "")) == wanted]
         candidates = exact or results
 
-        if not candidates:
-            where = f" in space {self.config.space_key}" if self.config.space_key else ""
-            raise ConfluenceError(
-                f"no page{where} matches the title {title!r}. Create that train's "
-                "sign-off page, or set CONFLUENCE_PAGE_ID to target one directly"
-            )
         if len(candidates) > 1:
             listing = "; ".join(f"{item['id']} ({item.get('title')!r})" for item in candidates[:10])
             raise ConfluenceError(
                 f"{len(candidates)} pages match the title {title!r}, so this run will not "
                 f"guess which one to publish to: {listing}. Set CONFLUENCE_PAGE_ID to the right one"
             )
+        return candidates
 
+    def find_page_by_title(self, title: str) -> Page:
+        """Read the single page matching a title, or explain that there is none."""
+        candidates = self.search_pages(title)
+        if not candidates:
+            where = f" in space {self.config.space_key}" if self.config.space_key else ""
+            raise ConfluenceError(
+                f"no page{where} matches the title {title!r}. Create that train's "
+                "sign-off page, or set CONFLUENCE_PAGE_ID to target one directly"
+            )
         chosen = candidates[0]
         log.info("resolved title %r to page %s (%r)", title, chosen["id"], chosen.get("title"))
         return self.get_page(str(chosen["id"]))

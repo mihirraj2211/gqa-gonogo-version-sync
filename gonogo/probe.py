@@ -25,7 +25,13 @@ from .providers import (
     get_provider,
     merge_builds,
 )
-from .sync import page_from_file, resolve_page, resolve_train, write_step_summary
+from .sync import (
+    page_from_file,
+    resolve_page,
+    resolve_train,
+    train_from_builds,
+    write_step_summary,
+)
 from .versions import extract_version, is_version
 
 log = logging.getLogger("gonogo.probe")
@@ -208,7 +214,12 @@ def probe_builds(config: Config, args: argparse.Namespace, report: list[str]) ->
     return {"builds": builds, "covered": len(wanted) - len(missing), "wanted": len(wanted)}
 
 
-def probe_page(config: Config, args: argparse.Namespace, report: list[str]) -> dict[str, Any]:
+def probe_page(
+    config: Config,
+    args: argparse.Namespace,
+    report: list[str],
+    builds: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Read the sign-off page and report how the config lines up with it."""
     if args.page_file:
         page = page_from_file(args.page_file, config.confluence.page_id)
@@ -220,16 +231,27 @@ def probe_page(config: Config, args: argparse.Namespace, report: list[str]) -> d
         )
         # Resolved the same way the sync resolves it, so a new train's page can
         # be checked here before anything is written to it.
-        page = resolve_page(client, config, args)
+        page = resolve_page(client, config, args, builds)
 
     shape = describe_table(page.body, config.confluence.columns)
     train, train_source = resolve_train(config, page.title, args.release_train)
+
+    # A feed that has moved to the next train is the one thing the sync cannot
+    # resolve on its own: it needs that train's page to exist.
+    feed_train = train_from_builds(builds or {})
+    mismatch = ""
+    if feed_train and train and feed_train != train:
+        mismatch = (
+            f"the build feed is on train {feed_train} but this page signs off {train}: "
+            f"create the {feed_train} sign-off page, or set RELEASE_TRAIN to the train to write"
+        )
 
     report += [
         "## Sign-off page",
         "",
         f"- Page: **{page.title}** (`{page.id}`), version {page.version}",
         f"- Train to enforce: **{train or 'any'}** (from {train_source})",
+        f"- Train in the build feed: **{feed_train or 'unknown'}**",
         f"- Headers found: {', '.join(f'`{h}`' for h in shape.headers if h)}",
         f"- Columns resolved: "
         + ", ".join(f"{key} -> #{index}" for key, index in sorted(shape.indices.items(), key=lambda kv: kv[1])),
@@ -253,7 +275,15 @@ def probe_page(config: Config, args: argparse.Namespace, report: list[str]) -> d
         report += ["", f"Rows on the page this repo leaves alone: {', '.join(untracked)}"]
     report.append("")
 
-    return {"matched": len(matched), "rows": len(config.clients), "page": page}
+    if mismatch:
+        report += [f"**Train mismatch:** {mismatch}", ""]
+
+    return {
+        "matched": len(matched),
+        "rows": len(config.clients),
+        "page": page,
+        "train_mismatch": mismatch,
+    }
 
 
 def run(args: argparse.Namespace) -> int:
@@ -263,9 +293,11 @@ def run(args: argparse.Namespace) -> int:
 
     report: list[str] = ["# Go/No-Go sync probe", ""]
     failures: list[str] = []
+    builds: dict[str, Any] = {}
 
     try:
         build_result = probe_builds(config, args, report)
+        builds = build_result["builds"]
         covered = build_result["covered"]
         if covered < max(1, args.min_platforms):
             failures.append(
@@ -280,13 +312,15 @@ def run(args: argparse.Namespace) -> int:
         report += ["## Sign-off page", "", "Skipped (`--no-page`).", ""]
     else:
         try:
-            page_result = probe_page(config, args, report)
+            page_result = probe_page(config, args, report, builds)
             matched = page_result["matched"]
             if matched < max(1, args.min_rows):
                 failures.append(
                     f"only {matched} client row(s) matched the sign-off table, "
                     f"expected at least {max(1, args.min_rows)}"
                 )
+            if page_result["train_mismatch"]:
+                failures.append(page_result["train_mismatch"])
         except (ConfluenceError, OSError) as exc:
             report += [f"**Page check failed:** {exc}", ""]
             failures.append(f"page: {exc}")

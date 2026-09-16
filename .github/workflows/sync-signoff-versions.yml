@@ -8,11 +8,13 @@ on:
     - cron: "*/15 * * * *"
 
   # Closest thing to live: a build pipeline that POSTs here gets the page
-  # updated in about a minute instead of waiting for the next tick.
+  # updated in about a minute instead of waiting for the next tick. Pass a train
+  # in client_payload to write that train's page regardless of the feed.
   #   curl -X POST -H "Accept: application/vnd.github+json" \
   #        -H "Authorization: Bearer <PAT with repo scope>" \
   #        https://api.github.com/repos/${{ github.repository }}/dispatches \
-  #        -d '{"event_type":"build-published"}'
+  #        -d '{"event_type":"build-published",
+  #             "client_payload":{"release_train":"7.13.0"}}'
   repository_dispatch:
     types: [build-published]
 
@@ -56,9 +58,10 @@ jobs:
 
     env:
       CONFLUENCE_DOMAIN: ${{ vars.CONFLUENCE_DOMAIN || 'wbdstreaming.atlassian.net' }}
-      # Leave the CONFLUENCE_PAGE_ID variable unset to have each run find the
-      # train's own page by title, which is what a new train needs: set the
-      # RELEASE_TRAIN variable to 7.13.0 and nothing else changes.
+      # Leave the CONFLUENCE_PAGE_ID variable unset and a scheduled run finds
+      # the current train's page by title on its own: it reads the train from
+      # the build feed, so the day 7.13.0 starts building it moves to the
+      # 7.13.0 page with no variable to change. Setting the id pins one page.
       CONFLUENCE_PAGE_ID: ${{ inputs.page_id || vars.CONFLUENCE_PAGE_ID }}
       CONFLUENCE_SPACE_KEY: ${{ vars.CONFLUENCE_SPACE_KEY || 'GQA' }}
       ATLASSIAN_USER_EMAIL: ${{ secrets.ATLASSIAN_USER_EMAIL }}
@@ -68,7 +71,12 @@ jobs:
       JFROG_URL: ${{ secrets.JFROG_URL }}
       JFROG_TOKEN: ${{ secrets.JFROG_TOKEN }}
       BUILD_PROVIDER: ${{ vars.BUILD_PROVIDER }}
-      RELEASE_TRAIN: ${{ inputs.release_train || vars.RELEASE_TRAIN }}
+      # Set this only to pin a train, e.g. to keep writing 7.12.0 while 7.13.0
+      # builds appear. Unset means "whichever train the feed is building".
+      RELEASE_TRAIN: >-
+        ${{ inputs.release_train
+            || github.event.client_payload.release_train
+            || vars.RELEASE_TRAIN }}
       ENFORCE_TRAIN: ${{ vars.ENFORCE_TRAIN }}
 
     steps:
