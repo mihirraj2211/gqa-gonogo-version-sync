@@ -82,7 +82,7 @@ def test_the_gate_token_is_sent_as_a_query_parameter():
     assert products == ["Max", "D-Plus"]
     for call in session.calls:
         assert call["params"]["token"] == "gate-token-value"
-        assert call["params"]["environment"] == "Orange"
+        assert call["params"]["environment"] == "Blue"
         # Nothing rides in a header for this API.
         assert "Authorization" not in call["headers"]
 

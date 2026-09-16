@@ -55,8 +55,8 @@ The two sign-off columns are two products of the same endpoint, so the sync
 makes two calls to `/api/latest-versions` per run and merges them by device:
 
 ```
-GET /api/latest-versions?token=…&environment=Orange&product=Max      -> MAX Version Number
-GET /api/latest-versions?token=…&environment=Orange&product=D-Plus   -> DPlus Version Number
+GET /api/latest-versions?token=…&environment=Blue&product=Max      -> MAX Version Number
+GET /api/latest-versions?token=…&environment=Blue&product=D-Plus   -> DPlus Version Number
 ```
 
 Things worth knowing about this API, all of them handled in `config/clients.yml`:
@@ -73,7 +73,11 @@ Things worth knowing about this API, all of them handled in `config/clients.yml`
   and skipped, never written into a cell. A platform with no build yet is logged
   at info; a failed lookup is a warning.
 - **Environments** are `Orange` (integration), `Blue` (staging) and `Green`
-  (release candidate / prod). The config sends `Orange`.
+  (release candidate / prod). This sign-off tracks `Blue`. The grid opens on
+  `Orange`, so what the page says will not always match what the dashboard shows
+  on screen — check the environment before calling it a bug.
+- **`flavour`** (`BASE`, `EMEA`, `AMER`) applies to Swift iOS/tvOS only and is
+  left unset, which the API reads as `AMER`.
 - **Devices** are `FireTablet`, `Android`, `FireTV`, `AndroidTV`, `tvOS`, `iOS`,
   `Roku`, `Samsung`, `LG`, `Xbox`, `Web`, `playstation-4` and `playstation-5`,
   matched case-insensitively. AAOS, Vega, Chromecast and VisionOS are not
@@ -126,7 +130,7 @@ source:
     auth_param: token     # query-string name for the token
   method: get             # post sends `body` as JSON, for query-style endpoints
   query:
-    environment: Orange
+    environment: Blue
     # requested_date: "{today}"   # tokens expand per run, any strftime format
   brand_requests:                 # one call per entry, merged by platform
     - { brand: max,   query: { product: Max } }

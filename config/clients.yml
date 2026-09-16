@@ -62,7 +62,12 @@ source:
   # Sent on every call. Date tokens are expanded per run: {today}, {yesterday},
   # {tomorrow}, {now} and {epoch_ms}, each accepting a strftime format.
   query:
-    environment: Orange     # Orange (integration) | Blue (staging) | Green (RC/prod)
+    # Orange (integration) | Blue (staging) | Green (release candidate / prod).
+    # Blue is what this sign-off tracks; the grid's default view is Orange, so
+    # numbers here will not always match what the dashboard shows on screen.
+    environment: Blue
+    # `flavour` (BASE | EMEA | AMER) applies to Swift iOS/tvOS only and is left
+    # unset, which the API reads as AMER.
     # The API defaults requested_date to today in its own timezone, which is
     # usually what you want; set this only to pin a date.
     # requested_date: "{today}"
