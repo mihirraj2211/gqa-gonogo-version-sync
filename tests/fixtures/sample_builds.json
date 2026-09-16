@@ -1,0 +1,17 @@
+[
+  { "name": "Web", "brand": "max", "version": "7.12.0.133", "buildDate": "2026-09-16 15:05:46" },
+  { "name": "Web", "brand": "dplus", "version": "7.12.0.96", "buildDate": "2026-09-16 15:05:46" },
+  { "name": "iOS", "brand": "max", "version": "7.12.0.73", "buildDate": "2026-09-16 13:01:42" },
+  { "name": "iOS", "brand": "dplus", "version": "21.12.0.16", "buildDate": "2026-09-16 13:01:42" },
+  { "name": "tvOS", "brand": "max", "version": "7.12.0.53", "buildDate": "2026-09-16 12:59:53" },
+  { "name": "Android", "brand": "max", "version": "7.12.0.66", "buildDate": "2026-09-16 15:05:46" },
+  { "name": "Android", "brand": "dplus", "version": "21.12.0.66", "buildDate": "2026-09-16 15:05:46" },
+  { "name": "Fire Tablet", "brand": "max", "version": "7.12.0.68", "buildDate": "2026-09-16 15:05:46" },
+  { "name": "AndroidTV", "brand": "max", "version": "7.12.0.43", "buildDate": "2026-09-16 00:54:11" },
+  { "name": "FireTV", "brand": "max", "version": "7.12.0.43", "buildDate": "2026-09-16 00:54:11" },
+  { "name": "Roku", "brand": "max", "version": "7.12.0.49", "buildDate": "2026-09-16 08:21:03" },
+  { "name": "Roku", "brand": "dplus", "version": "7.12.0.50", "buildDate": "2026-09-16 08:21:03" },
+  { "name": "Chromecast", "brand": "max", "version": "7.12.0.133", "buildDate": "2026-09-16 15:05:46" },
+  { "name": "CDEV", "brand": "max", "version": "7.12.0.133", "buildDate": "2026-09-16 15:05:46" },
+  { "name": "VisionOS", "brand": "max", "version": "7.12.0.73", "buildDate": "2026-09-16 13:01:42" }
+]

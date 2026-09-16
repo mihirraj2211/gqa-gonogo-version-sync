@@ -1,0 +1,18 @@
+{
+  "cache_expires_at": 1789561768.8932312,
+  "devices": [
+    { "name": "FireTablet", "version": "21.12.0.66", "date": "2026-09-16 11:07:04" },
+    { "name": "Android", "version": "21.12.0.66", "date": "2026-09-16 11:07:04" },
+    { "name": "FireTV", "version": "21.12.0.67", "date": "2026-09-11 01:15:00" },
+    { "name": "AndroidTV", "version": "21.12.0.67", "date": "2026-09-11 01:15:00" },
+    { "name": "tvOS", "version": "N/A", "date": "" },
+    { "name": "iOS", "version": "N/A", "date": "" },
+    { "name": "Roku", "version": "7.12.0.50", "date": "2026-09-10 01:21:42" },
+    { "name": "Samsung", "version": "7.12.0.90", "date": "2026-09-09 19:45:05" },
+    { "name": "LG", "version": "7.12.0.90", "date": "2026-09-09 19:41:58" },
+    { "name": "Xbox", "version": "7.12.0.90", "date": "2026-09-09 19:56:51" },
+    { "name": "Web", "version": "7.12.0.96", "date": "2026-09-12 02:47:11" },
+    { "name": "playstation-4", "version": "7.12.0.90", "date": "2026-09-09 19:59:11" },
+    { "name": "playstation-5", "version": "7.12.0.90", "date": "2026-09-09 19:57:33" }
+  ]
+}

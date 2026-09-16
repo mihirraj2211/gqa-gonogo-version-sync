@@ -1,0 +1,41 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly, so the 15-minute schedule never lapses through the 60-day
+    # inactivity cutoff GitHub applies to scheduled workflows, and so a
+    # dependency release that breaks the sync is caught before a sign-off is.
+    - cron: "40 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - run: pytest -q
+
+      # The whole pipeline against fixtures: no tokens, no network, no writes.
+      # One file per product, the way /api/latest-versions is called for real.
+      - name: Offline rehearsal
+        run: |
+          python -m gonogo.sync \
+            --builds-file max=tests/fixtures/latest_versions_max.json \
+            --builds-file dplus=tests/fixtures/latest_versions_dplus.json \
+            --page-file tests/fixtures/sample_page.xhtml \
+            --output /tmp/body.xhtml
+          python -m gonogo.probe \
+            --builds-file max=tests/fixtures/latest_versions_max.json \
+            --builds-file dplus=tests/fixtures/latest_versions_dplus.json \
+            --page-file tests/fixtures/sample_page.xhtml
