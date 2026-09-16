@@ -2,9 +2,10 @@ name: Sync Go/No-Go build versions
 
 on:
   schedule:
-    # Expect a few minutes of drift: GitHub queues these on shared capacity.
-    # `*/5` is the platform floor, nothing shorter fires.
-    - cron: "*/15 * * * *"
+    # Every 15 minutes, deliberately off :00/:15/:30/:45. GitHub queues these
+    # on shared capacity and drops them under load, which peaks on the hour and
+    # quarter-hour, so the obvious `*/15` is the least reliable spelling of it.
+    - cron: "7,22,37,52 * * * *"
 
   # A build pipeline POSTing here updates the page in about a minute instead
   # of waiting for the next tick. client_payload.release_train pins the train.

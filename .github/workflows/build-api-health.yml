@@ -6,7 +6,7 @@ name: Build API and page health
 
 on:
   schedule:
-    - cron: "25 */6 * * *"
+    - cron: "23 */6 * * *"
   workflow_dispatch:
     inputs:
       show_payload:
