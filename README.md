@@ -20,9 +20,9 @@ cron (15 min) -> GitHub Actions -> build API -> version mapping -> Confluence RE
    title, so a 7.13.0 build can never land on a 7.12.0 sign-off page.
 2. **Fetch** the latest build per platform (`gonogo/providers.py`).
 3. **Map** each device onto a client row (`gonogo/config.py`). A sign-off row
-   covers an app family rather than one device, so `Apple` reads iOS then tvOS,
-   `LB` (leanback) reads Android TV then Fire TV, and `CDEV` reads Samsung then
-   LG. The first device that reported wins, and a run warns when the others
+   can cover an app family rather than one device, so `Android` reads the phone
+   then the Fire tablet, `LB` (leanback) reads Android TV then Fire TV, and
+   `CDEV` reads Samsung then LG. The first device that reported wins, and a run warns when the others
    disagree. Versions are written as the API reports them; the `+14` store
    offset (`21.x.y.build` on Apple and Android, base `7.x.y.build` on Web, Roku
    and CDEV) is only used to check that a reported D+ suits its row.
@@ -32,6 +32,9 @@ cron (15 min) -> GitHub Actions -> build API -> version mapping -> Confluence RE
 
 - **No empty-page revisions.** If the table already matches the builds, nothing
   is published. Otherwise you'd get 96 meaningless page versions a day.
+- **No silent blank.** A configured row the table does not have fails the run
+  rather than warning into a log nobody reads, which is how the two Apple rows
+  stayed empty for a day. Rows that did match are still written first.
 - **No odd row out.** Versions are written as inline code, which is how the
   table's hand-typed rows are formatted. A cell holding the right version in
   bare text is rewritten so the column reads the same all the way down;
@@ -222,23 +225,25 @@ sync under that name.
 ### 3. Point it at your table
 
 `config/clients.yml` holds the release train, the page id, the column headers to
-look for, and the client rows. It is wired to the six rows of the Go/No-Go table:
+look for, and the client rows. It is wired to the seven rows of the Go/No-Go
+table:
 
 | Row | Devices read | D+ scheme |
 | --- | --- | --- |
 | `Web` | `web` | base |
 | `Roku` | `roku` | base |
-| `Apple` | `ios`, `tvos` | offset |
+| `Apple IOS` | `ios` | offset |
+| `Apple TV` | `tvos` | offset |
 | `Android` | `android`, `firetablet` | offset |
 | `LB` | `androidtv`, `firetv` | offset |
 | `CDEV` | `samsung`, `lg` | base |
 
-Row matching ignores case and punctuation, and a config row matches a table row
-that only extends it, so `CDEV (Samsung, Bounty Flow, Linux)` and `Apple iOS /
-tvOS / VisionOS` match `CDEV` and `Apple` in the config. An exact spelling
-always wins, and a label that two rows could extend is skipped with a warning
-naming both, because writing the mobile build into the TV row is worse than
-writing nothing. Rows in the table that aren't in the config are never touched,
+Row matching ignores case and punctuation, reads the `aliases` list, and
+matches a table row that only extends the configured one, so `CDEV (Samsung,
+Bounty Flow, Linux)` matches `CDEV` and `Leanback` matches `LB`. An exact
+spelling always wins, and a label that two rows could extend is skipped with a
+warning naming both -- which is how the table's separate `Apple IOS` and `Apple
+TV` rows were found, after a single `Apple` row had silently matched neither. Rows in the table that aren't in the config are never touched,
 which covers the Notes and Go/No-Go columns and any row added later.
 A repeated header row, which this table has, is not read as
 a client. The API also builds `xbox`, `playstation4` and `playstation5`; add a
@@ -360,7 +365,7 @@ a saved body, `--output body.xhtml` to dump the storage format it would publish,
 `--release-train` to override the train.
 
 ```bash
-pytest    # 125 tests, no network needed
+pytest    # 129 tests, no network needed
 ```
 
 ### When Confluence answers 404
@@ -388,9 +393,12 @@ with "credential refused", and it masks the token.
   under load, which peaks on the hour and quarter-hour, so the crons here sit on
   odd minutes. On this repo the `schedule` event has never fired while manual
   runs succeed, which is a reported pattern for new private repositories on the
-  Free plan. `tools/run-sync.sh` plus the systemd units beside it drive the same
-  sync from a local timer; the build pipeline can also POST to the
-  `repository_dispatch` hook to have Actions do the work on demand.
+  Free plan, and when it does fire it delivers about one tick in ten, minutes
+  late. What actually keeps the page current is a pair of local timers:
+  `gonogo-sync.timer` runs the sync on the quarter-hours and
+  `gonogo-probe.timer` the health probe seven minutes later, both installed
+  from `tools/`. The build pipeline can also POST to the `repository_dispatch`
+  hook to have Actions do the work on demand.
 - **Scheduled workflows go dormant.** GitHub disables schedules in a repository
   with no activity for 60 days. The weekly test run keeps this one awake.
 - **Network reachability is not the same as authentication.** GitHub-hosted

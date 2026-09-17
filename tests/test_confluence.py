@@ -103,7 +103,9 @@ def test_describe_table_reports_headers_and_rows(body):
         "DPlus Version Number",
         "Notes",
     ]
-    assert shape.row_labels == ["Web", "Roku", "Apple", "Android", "LB", "CDEV", "Playstation"]
+    assert shape.row_labels == [
+        "Web", "Roku", "Apple IOS", "Apple TV", "Android", "LB", "CDEV", "Playstation",
+    ]
     assert shape.indices == {"client": 0, "max": 4, "dplus": 5}
 
 
@@ -219,3 +221,30 @@ def test_two_config_rows_cannot_land_on_the_same_table_row():
 
     assert len(changes) == 1
     assert len(unmatched) == 1
+
+
+def test_an_alias_matches_a_row_the_name_does_not():
+    """`aliases` was config the writer never read, so a table calling the row
+    "Leanback" went unwritten while the config looked correct."""
+    body = _table("Web", "Leanback")
+    updates = {"LB": {"max": "7.12.0.67"}}
+
+    _, changes, unmatched = apply_versions(body, updates, COLUMNS, aliases={"LB": ("Leanback",)})
+
+    assert [c.row for c in changes] == ["Leanback"]
+    assert not unmatched
+
+
+def test_the_two_apple_rows_take_their_own_platform():
+    """The live table signs off iOS and tvOS separately; one row apiece."""
+    body = _table("Apple IOS", "Apple TV")
+    updates = {"Apple IOS": {"max": "7.12.0.73"}, "Apple TV": {"max": "7.12.0.99"}}
+
+    new_body, changes, unmatched = apply_versions(body, updates, COLUMNS)
+
+    assert [(c.row, c.new) for c in changes] == [
+        ("Apple IOS", "7.12.0.73"),
+        ("Apple TV", "7.12.0.99"),
+    ]
+    assert not unmatched
+    assert "<code>7.12.0.73</code>" in new_body and "<code>7.12.0.99</code>" in new_body

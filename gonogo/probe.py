@@ -259,7 +259,11 @@ def probe_page(
 
     # The same pairing the writer uses, so this report cannot promise a row
     # the run will not write, or vice versa.
-    pairing = pair_labels([client_cfg.row for client_cfg in config.clients], shape.row_labels)
+    pairing = pair_labels(
+        [client_cfg.row for client_cfg in config.clients],
+        shape.row_labels,
+        {client_cfg.row: client_cfg.aliases for client_cfg in config.clients},
+    )
     matched: list[str] = []
     unmatched: list[str] = []
     for client_cfg in config.clients:

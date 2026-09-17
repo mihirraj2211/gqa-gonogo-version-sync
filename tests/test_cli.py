@@ -157,3 +157,23 @@ def test_a_feed_on_the_next_train_fails_with_an_explanation(caplog):
     assert exit_code == sync.EXIT_ERROR
     assert FakeConfluence.published == []
     assert "7.13.0" in caplog.text and "7.12.0" in caplog.text
+
+
+def test_a_row_missing_from_the_table_fails_the_run(tmp_path):
+    """A blank cell behind an exit code of 0 is how the Apple row went unwritten
+    for a day, so a row the table does not have is a failure."""
+    page = tmp_path / "page.xhtml"
+    page.write_text(
+        PAGE.read_text(encoding="utf-8").replace(
+            "<p>CDEV</p>", "<p>Renamed Overnight</p>"
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = run_cli("--page-file", str(page))
+
+    assert exit_code == sync.EXIT_ERROR
+
+
+def test_a_run_where_every_row_matched_still_succeeds():
+    assert run_cli("--page-file", str(PAGE)) == sync.EXIT_OK

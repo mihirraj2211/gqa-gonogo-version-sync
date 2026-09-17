@@ -1,0 +1,10 @@
+# Adjust WorkingDirectory/ExecStart if the repo lives somewhere else.
+[Unit]
+Description=Check the build API and the GQA sign-off page still line up
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/WBD/gqa-gonogo-version-sync
+ExecStart=%h/WBD/gqa-gonogo-version-sync/tools/run-probe.sh

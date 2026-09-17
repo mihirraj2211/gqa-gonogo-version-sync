@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the build API and page health probe every 15 minutes
+
+[Timer]
+# Seven minutes off the sync, so the two never hit the API together.
+OnCalendar=*:07/15
+AccuracySec=30s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

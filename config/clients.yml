@@ -100,10 +100,17 @@ clients:
     source_repo: wbd-beam-brightscript
     dplus_scheme: base
 
-  # One Swift tree for both. VisionOS is not a device this API builds.
-  - row: "Apple"
-    aliases: ["Apple iOS", "iOS", "tvOS", "Apple iOS / tvOS", "iPhone", "Apple TV"]
-    platform: [ios, tvos]
+  # The table signs these off separately, so one row each. Both come out of the
+  # same Swift tree; VisionOS is not a device this API builds.
+  - row: "Apple IOS"
+    aliases: ["Apple iOS", "iOS", "iPhone", "Apple iPhone"]
+    platform: ios
+    source_repo: wbd-beam-apple
+    dplus_scheme: offset
+
+  - row: "Apple TV"
+    aliases: ["tvOS", "Apple tvOS", "AppleTV"]
+    platform: tvos
     source_repo: wbd-beam-apple
     dplus_scheme: offset
 
