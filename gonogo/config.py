@@ -73,6 +73,8 @@ class ConfluenceConfig:
     #: instead of pinning an id here every train.
     space_key: str = ""
     title_template: str = ""
+    #: "code" writes versions as inline code, matching the table's own style.
+    cell_format: str = "code"
 
     def title_for(self, train: str) -> str:
         """Render the page title for a train, e.g. 7.12.0 -> the 7.12.0 page."""
@@ -161,9 +163,12 @@ def load_config(path: str | Path) -> Config:
         space_key=os.environ.get("CONFLUENCE_SPACE_KEY") or confluence_raw.get("space_key", ""),
         title_template=os.environ.get("CONFLUENCE_TITLE_TEMPLATE")
         or confluence_raw.get("title_template", ""),
+        cell_format=str(confluence_raw.get("cell_format", "code")).strip().lower(),
     )
     if not confluence.domain:
         raise ValueError("confluence.domain is required")
+    if confluence.cell_format not in ("code", "plain"):
+        raise ValueError('confluence.cell_format must be "code" or "plain"')
     if not confluence.page_id and not confluence.title_template:
         raise ValueError(
             "set confluence.page_id (or CONFLUENCE_PAGE_ID) to target one page, "

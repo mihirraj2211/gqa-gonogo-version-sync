@@ -2,8 +2,9 @@
 Description=Run the Go/No-Go version sync every 15 minutes
 
 [Timer]
-OnBootSec=2min
-OnUnitActiveSec=15min
+# Fixed minutes rather than an interval from the last finish, which drifts by
+# the length of each run.
+OnCalendar=*:00/15
 AccuracySec=30s
 # Catch up after a suspend or a reboot rather than waiting a full interval.
 Persistent=true

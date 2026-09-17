@@ -24,6 +24,10 @@ confluence:
   # beats a copy, and two equal matches are an error rather than a guess.
   title_template: "{train} Build GQA App Sign off"
   version_message: "Automated build version sync"
+  # The table shows versions as inline code, so write them that way; "plain"
+  # writes bare text. A cell holding the right version in the wrong markup is
+  # rewritten, which is how rows an earlier run left plain get picked up.
+  cell_format: code
   # First header match wins.
   columns:
     client: ["Client", "Platform", "Client / Platform"]

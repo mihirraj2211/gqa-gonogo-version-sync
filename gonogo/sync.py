@@ -217,6 +217,7 @@ def _publish(
     unmatched: list[str],
     updates: dict[str, dict[str, str]],
     columns: dict[str, list[str]],
+    style: str,
     prefix: str,
     retries: int,
 ) -> tuple[int | None, list[CellChange], list[str]]:
@@ -234,7 +235,7 @@ def _publish(
                 raise
             log.warning("%s; re-reading page and retrying", exc)
             page = client.get_page(page.id)
-            new_body, changes, unmatched = apply_versions(page.body, updates, columns)
+            new_body, changes, unmatched = apply_versions(page.body, updates, columns, style)
             if not changes:
                 return None, changes, unmatched
 
@@ -345,7 +346,9 @@ def run(args: argparse.Namespace) -> int:
         write_step_summary(_summary_lines([], skipped, [], published=False, context=context))
         return EXIT_ERROR
 
-    new_body, changes, unmatched = apply_versions(page.body, updates, config.confluence.columns)
+    new_body, changes, unmatched = apply_versions(
+        page.body, updates, config.confluence.columns, config.confluence.cell_format
+    )
     for item in unmatched:
         log.warning("row %r not found in the sign-off table", item)
 
@@ -375,6 +378,7 @@ def run(args: argparse.Namespace) -> int:
         unmatched,
         updates,
         config.confluence.columns,
+        config.confluence.cell_format,
         config.confluence.version_message,
         args.retries,
     )

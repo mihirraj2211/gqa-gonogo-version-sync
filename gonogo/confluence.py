@@ -11,7 +11,7 @@ import html.entities
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any, Iterable, Sequence
 
 import requests
 from lxml import etree
@@ -45,8 +45,12 @@ class CellChange:
     column: str
     old: str
     new: str
+    #: Same version, rewritten only to match the table's formatting.
+    reformat: bool = False
 
     def __str__(self) -> str:
+        if self.reformat:
+            return f"{self.row} [{self.column}]: {self.new} reformatted as inline code"
         return f"{self.row} [{self.column}]: {self.old or '(empty)'} -> {self.new}"
 
 
@@ -105,13 +109,25 @@ def cell_text(cell: etree._Element) -> str:
     return " ".join("".join(cell.itertext()).split())
 
 
-def set_cell_text(cell: etree._Element, value: str) -> None:
-    """Replace a cell's contents with a single paragraph of plain text."""
+def cell_style(cell: etree._Element) -> str:
+    """How a cell's text is marked up: "code" for inline code, else "plain"."""
+    return "code" if cell.find(".//code") is not None else "plain"
+
+
+def set_cell_text(cell: etree._Element, value: str, style: str = "plain") -> None:
+    """Replace a cell's contents with a single paragraph holding ``value``.
+
+    The sign-off table shows versions as inline code, so a cell written as bare
+    text reads as the odd one out next to the hand-typed rows.
+    """
     for child in list(cell):
         cell.remove(child)
     cell.text = None
     paragraph = etree.SubElement(cell, "p")
-    paragraph.text = value
+    if style == "code":
+        etree.SubElement(paragraph, "code").text = value
+    else:
+        paragraph.text = value
 
 
 def _is_header_row(row: etree._Element) -> bool:
@@ -170,10 +186,71 @@ def find_signoff_table(root: etree._Element, columns: dict[str, list[str]]) -> t
     return best
 
 
+def pair_labels(keys: Sequence[str], page_labels: Sequence[str]) -> dict[str, int]:
+    """Match each configured row label to at most one label on the page.
+
+    The two spellings drift apart: a config row "Apple" meets a table that
+    calls the row "Apple iOS / tvOS / VisionOS". Exact matches are taken first,
+    then a label the page only extends, and then only when exactly one row
+    extends it -- two candidates is a guess, and a guess writes a version into
+    the wrong client's row.
+
+    Returns ``{config label: index into page_labels}``.
+    """
+    normalised = [normalise_label(label) for label in page_labels]
+    pairing: dict[str, int] = {}
+    taken: set[int] = set()
+
+    for key in keys:
+        wanted = normalise_label(key)
+        for index, label in enumerate(normalised):
+            if index not in taken and label == wanted:
+                pairing[key] = index
+                taken.add(index)
+                break
+
+    for key in keys:
+        if key in pairing:
+            continue
+        wanted = normalise_label(key) + " "
+        extended = [
+            index
+            for index, label in enumerate(normalised)
+            if index not in taken and label.startswith(wanted)
+        ]
+        if len(extended) == 1:
+            pairing[key] = extended[0]
+            taken.add(extended[0])
+            log.info("row %r matched the table's %r", key, page_labels[extended[0]])
+        elif len(extended) > 1:
+            log.warning(
+                "row %r could be any of %s; name it exactly in the config rather than "
+                "having a version written into the wrong row",
+                key,
+                ", ".join(repr(page_labels[index]) for index in extended),
+            )
+
+    return pairing
+
+
+def _pair_rows(
+    rows: list[etree._Element],
+    updates: dict[str, dict[str, str]],
+    client_index: int,
+) -> dict[int, str]:
+    """``{id(row): config label}`` for the rows this run may write."""
+    spellings = [
+        cell_text((row.findall("th") + row.findall("td"))[client_index]) for row in rows
+    ]
+    pairing = pair_labels(list(updates), spellings)
+    return {id(rows[index]): key for key, index in pairing.items()}
+
+
 def apply_versions(
     body: str,
     updates: dict[str, dict[str, str]],
     columns: dict[str, list[str]],
+    style: str = "code",
 ) -> tuple[str, list[CellChange], list[str]]:
     """Write MAX/D+ versions into the sign-off table.
 
@@ -193,22 +270,22 @@ def apply_versions(
     changes: list[CellChange] = []
     matched_rows: set[str] = set()
 
-    for row in rows[1:]:
-        if _is_header_row(row):
-            continue
-        cells = row.findall("th") + row.findall("td")
-        if len(cells) <= indices["client"]:
-            continue
-        label = cell_text(cells[indices["client"]])
-        values = updates.get(label)
-        if values is None:
-            values = next(
-                (v for k, v in updates.items() if normalise_label(k) == normalise_label(label)),
-                None,
-            )
+    client_rows = [
+        row
+        for row in rows[1:]
+        if not _is_header_row(row)
+        and len(row.findall("th") + row.findall("td")) > indices["client"]
+    ]
+    pairing = _pair_rows(client_rows, updates, indices["client"])
+
+    for row in client_rows:
+        key = pairing.get(id(row))
+        values = updates.get(key) if key else None
         if not values:
             continue
-        matched_rows.add(label)
+        cells = row.findall("th") + row.findall("td")
+        label = cell_text(cells[indices["client"]])
+        matched_rows.add(key)
 
         for key in ("max", "dplus"):
             new_value = values.get(key)
@@ -217,12 +294,23 @@ def apply_versions(
                 continue
             cell = cells[index]
             old_value = cell_text(cell)
-            if old_value == new_value:
+            # A cell can hold the right version in the wrong markup, left plain
+            # by an older run of this tool; rewrite it so the column is uniform.
+            reformat = old_value == new_value and cell_style(cell) != style
+            if old_value == new_value and not reformat:
                 continue
-            set_cell_text(cell, new_value)
-            changes.append(CellChange(row=label, column=column_names.get(key, key), old=old_value, new=new_value))
+            set_cell_text(cell, new_value, style)
+            changes.append(
+                CellChange(
+                    row=label,
+                    column=column_names.get(key, key),
+                    old=old_value,
+                    new=new_value,
+                    reformat=reformat,
+                )
+            )
 
-    unmatched = [label for label in updates if normalise_label(label) not in {normalise_label(r) for r in matched_rows}]
+    unmatched = [key for key in updates if key not in matched_rows]
     return serialise_storage(root), changes, unmatched
 
 

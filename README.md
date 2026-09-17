@@ -32,6 +32,10 @@ cron (15 min) -> GitHub Actions -> build API -> version mapping -> Confluence RE
 
 - **No empty-page revisions.** If the table already matches the builds, nothing
   is published. Otherwise you'd get 96 meaningless page versions a day.
+- **No odd row out.** Versions are written as inline code, which is how the
+  table's hand-typed rows are formatted. A cell holding the right version in
+  bare text is rewritten so the column reads the same all the way down;
+  `confluence.cell_format: plain` turns that off.
 - **No macro corruption.** Confluence storage format is parsed as XML, not HTML.
   An HTML round-trip rewrites `<ac:structured-macro/>` and Confluence rejects the
   result, which would break every macro on the page.
@@ -229,10 +233,14 @@ look for, and the client rows. It is wired to the six rows of the Go/No-Go table
 | `LB` | `androidtv`, `firetv` | offset |
 | `CDEV` | `samsung`, `lg` | base |
 
-Row matching ignores case and punctuation, so `CDEV (Samsung, Bounty Flow,
-Linux)` in the table matches `CDEV` in the config. Rows in the table that aren't
-in the config are never touched, which covers the Notes and Go/No-Go columns and
-any row added later. A repeated header row, which this table has, is not read as
+Row matching ignores case and punctuation, and a config row matches a table row
+that only extends it, so `CDEV (Samsung, Bounty Flow, Linux)` and `Apple iOS /
+tvOS / VisionOS` match `CDEV` and `Apple` in the config. An exact spelling
+always wins, and a label that two rows could extend is skipped with a warning
+naming both, because writing the mobile build into the TV row is worse than
+writing nothing. Rows in the table that aren't in the config are never touched,
+which covers the Notes and Go/No-Go columns and any row added later.
+A repeated header row, which this table has, is not read as
 a client. The API also builds `xbox`, `playstation4` and `playstation5`; add a
 row when the table grows one.
 
@@ -352,7 +360,7 @@ a saved body, `--output body.xhtml` to dump the storage format it would publish,
 `--release-train` to override the train.
 
 ```bash
-pytest    # 115 tests, no network needed
+pytest    # 125 tests, no network needed
 ```
 
 ### When Confluence answers 404
