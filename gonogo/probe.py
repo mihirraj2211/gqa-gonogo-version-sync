@@ -16,7 +16,7 @@ from dataclasses import replace
 from typing import Any
 
 from .config import Config, load_config, normalise_label
-from .confluence import ConfluenceClient, ConfluenceError, describe_table
+from .confluence import ConfluenceClient, ConfluenceError, describe_table, pair_labels
 from .redaction import install_log_redaction, redact
 from .providers import (
     ProviderError,
@@ -257,19 +257,24 @@ def probe_page(
         "",
     ]
 
+    # The same pairing the writer uses, so this report cannot promise a row
+    # the run will not write, or vice versa.
+    pairing = pair_labels([client_cfg.row for client_cfg in config.clients], shape.row_labels)
     matched: list[str] = []
     unmatched: list[str] = []
     for client_cfg in config.clients:
-        hit = next((label for label in shape.row_labels if normalise_label(label) in client_cfg.labels), None)
-        if hit:
-            matched.append(f"{client_cfg.row} -> {hit}")
-        else:
+        index = pairing.get(client_cfg.row)
+        if index is None:
             unmatched.append(client_cfg.row)
+        else:
+            matched.append(f"{client_cfg.row} -> {shape.row_labels[index]}")
 
     report.append(f"Rows matched ({len(matched)}/{len(config.clients)}): " + ", ".join(matched))
     if unmatched:
         report += ["", f"**Config rows not found on the page:** {', '.join(unmatched)}"]
-    untracked = [label for label in shape.row_labels if not config.client_for_label(label)]
+    untracked = [
+        label for index, label in enumerate(shape.row_labels) if index not in set(pairing.values())
+    ]
     if untracked:
         report += ["", f"Rows on the page this repo leaves alone: {', '.join(untracked)}"]
     report.append("")

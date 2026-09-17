@@ -69,15 +69,15 @@ def test_live_run_publishes_updated_versions(tmp_path):
     body, message = FakeConfluence.published[0]
     assert "cell(s)" in message
     # Every row of the table fills from the feed.
-    assert "<p>7.12.0.133</p>" in body and "<p>7.12.0.96</p>" in body    # Web
-    assert "<p>7.12.0.49</p>" in body and "<p>7.12.0.50</p>" in body     # Roku
-    assert "<p>7.12.0.73</p>" in body                                    # Apple
-    assert "<p>7.12.0.66</p>" in body and "<p>21.12.0.66</p>" in body    # Android
-    assert "<p>7.12.0.67</p>" in body and "<p>21.12.0.67</p>" in body    # LB
-    assert "<p>7.12.0.132</p>" in body and "<p>7.12.0.90</p>" in body    # CDEV
+    assert "<p><code>7.12.0.133</code></p>" in body and "<p><code>7.12.0.96</code></p>" in body    # Web
+    assert "<p><code>7.12.0.49</code></p>" in body and "<p><code>7.12.0.50</code></p>" in body     # Roku
+    assert "<p><code>7.12.0.73</code></p>" in body                                              # Apple
+    assert "<p><code>7.12.0.66</code></p>" in body and "<p><code>21.12.0.66</code></p>" in body    # Android
+    assert "<p><code>7.12.0.67</code></p>" in body and "<p><code>21.12.0.67</code></p>" in body    # LB
+    assert "<p><code>7.12.0.132</code></p>" in body and "<p><code>7.12.0.90</code></p>" in body    # CDEV
     # Apple reports no D+ build, so that cell keeps its blank rather than
     # gaining a number borrowed from MAX.
-    assert "<p>21.12.0.73</p>" not in body
+    assert "21.12.0.73" not in body
     # The status macro, the Notes column and the untracked Playstation row live.
     assert 'ac:name="status"' in body
     assert "<p>Playstation</p>" in body and "<p>7.12.0.10</p>" in body
@@ -119,7 +119,7 @@ def test_page_file_runs_without_credentials_and_never_publishes(monkeypatch, tmp
 
     assert exit_code == sync.EXIT_OK
     assert FakeConfluence.published == []
-    assert "<p>7.12.0.133</p>" in output.read_text(encoding="utf-8")
+    assert "<p><code>7.12.0.133</code></p>" in output.read_text(encoding="utf-8")
 
 
 def test_a_concurrent_edit_is_retried_against_the_fresh_page(monkeypatch):
@@ -144,7 +144,7 @@ def test_a_concurrent_edit_is_retried_against_the_fresh_page(monkeypatch):
     assert run_cli() == sync.EXIT_OK
     assert attempts["count"] == 2
     assert len(FakeConfluence.published) == 1
-    assert "<p>7.12.0.133</p>" in FakeConfluence.published[0][0]
+    assert "<p><code>7.12.0.133</code></p>" in FakeConfluence.published[0][0]
 
 
 def test_a_feed_on_the_next_train_fails_with_an_explanation(caplog):
