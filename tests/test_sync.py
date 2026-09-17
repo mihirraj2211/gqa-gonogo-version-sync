@@ -22,7 +22,7 @@ def test_offset_and_base_rows_get_the_right_dplus_scheme():
     }
     updates, _ = plan_updates(config, builds)
 
-    assert updates["Apple"] == {"max": "7.12.0.73", "dplus": "21.12.0.16"}
+    assert updates["Apple IOS"] == {"max": "7.12.0.73", "dplus": "21.12.0.16"}
     assert updates["Roku"] == {"max": "7.12.0.49", "dplus": "7.12.0.50"}
     assert updates["Web"] == {"max": "7.12.0.133", "dplus": "7.12.0.96"}
 
@@ -71,17 +71,20 @@ def test_a_row_that_ships_no_dplus_keeps_its_cell():
     builds = {"ios": build("ios", "7.12.0.73", "21.12.0.16")}
 
     updates, _ = plan_updates(config, builds)
-    assert updates["Apple"] == {"max": "7.12.0.73"}
+    assert updates["Apple IOS"] == {"max": "7.12.0.73"}
 
 
 def test_a_row_covering_two_devices_uses_the_first_that_reported():
-    """The Apple row is iOS then tvOS; LB is Android TV then Fire TV."""
+    """Android is the phone then the Fire tablet; LB is Android TV then Fire TV."""
     config = load_config(CONFIG)
-    builds = {"tvos": build("tvos", "7.12.0.73"), "firetv": build("firetv", "7.12.0.67", "21.12.0.67")}
+    builds = {
+        "firetablet": build("firetablet", "7.12.0.66", "21.12.0.66"),
+        "firetv": build("firetv", "7.12.0.67", "21.12.0.67"),
+    }
 
     updates, _ = plan_updates(config, builds)
 
-    assert updates["Apple"] == {"max": "7.12.0.73"}
+    assert updates["Android"] == {"max": "7.12.0.66", "dplus": "21.12.0.66"}
     assert updates["LB"] == {"max": "7.12.0.67", "dplus": "21.12.0.67"}
 
 
@@ -112,7 +115,8 @@ def test_platforms_missing_from_the_feed_are_reported_not_blanked():
     updates, skipped = plan_updates(config, {"web": build("web", "7.12.0.133")})
     assert set(updates) == {"Web"}
     assert any("no build reported for roku" in item for item in skipped)
-    assert any("no build reported for ios/tvos" in item for item in skipped)
+    assert any("no build reported for ios" in item for item in skipped)
+    assert any("no build reported for tvos" in item for item in skipped)
 
 
 def test_unparsable_versions_are_skipped():

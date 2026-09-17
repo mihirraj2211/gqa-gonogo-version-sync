@@ -116,8 +116,8 @@ def test_ios_keeps_its_dplus_cell_when_the_feed_reports_none(caplog):
     config = load_config(CONFIG)
     updates, _ = plan_updates(config, fetch(FuseSession()), train="7.12.0")
 
-    assert updates["Apple"] == {"max": "7.12.0.73"}
-    assert "Apple: no D+ version reported, leaving that cell as it is" in caplog.text
+    assert updates["Apple IOS"] == {"max": "7.12.0.73"}
+    assert "Apple IOS: no D+ version reported, leaving that cell as it is" in caplog.text
 
 
 def test_reported_dplus_versions_are_written_verbatim():
@@ -132,7 +132,7 @@ def test_reported_dplus_versions_are_written_verbatim():
     assert updates["LB"] == {"max": "7.12.0.67", "dplus": "21.12.0.67"}
     assert updates["Android"] == {"max": "7.12.0.66", "dplus": "21.12.0.66"}
     # Every row of the table is accounted for, and nothing else is touched.
-    assert sorted(updates) == ["Android", "Apple", "CDEV", "LB", "Roku", "Web"]
+    assert sorted(updates) == ["Android", "Apple IOS", "Apple TV", "CDEV", "LB", "Roku", "Web"]
 
 
 def test_an_unset_token_fails_before_the_request(monkeypatch):

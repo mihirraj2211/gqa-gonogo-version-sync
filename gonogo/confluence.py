@@ -11,7 +11,7 @@ import html.entities
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
 import requests
 from lxml import etree
@@ -186,25 +186,33 @@ def find_signoff_table(root: etree._Element, columns: dict[str, list[str]]) -> t
     return best
 
 
-def pair_labels(keys: Sequence[str], page_labels: Sequence[str]) -> dict[str, int]:
+def pair_labels(
+    keys: Sequence[str],
+    page_labels: Sequence[str],
+    aliases: Mapping[str, Sequence[str]] | None = None,
+) -> dict[str, int]:
     """Match each configured row label to at most one label on the page.
 
-    The two spellings drift apart: a config row "Apple" meets a table that
-    calls the row "Apple iOS / tvOS / VisionOS". Exact matches are taken first,
-    then a label the page only extends, and then only when exactly one row
-    extends it -- two candidates is a guess, and a guess writes a version into
-    the wrong client's row.
+    The two spellings drift apart: a config row "LB" meets a table that calls
+    the row "Leanback", which is what ``aliases`` is for. Exact matches are
+    taken first, then a label the page only extends, and then only when exactly
+    one row extends it -- two candidates is a guess, and a guess writes a
+    version into the wrong client's row.
 
     Returns ``{config label: index into page_labels}``.
     """
+    aliases = aliases or {}
     normalised = [normalise_label(label) for label in page_labels]
     pairing: dict[str, int] = {}
     taken: set[int] = set()
 
+    def spellings(key: str) -> list[str]:
+        return [key, *aliases.get(key, ())]
+
     for key in keys:
-        wanted = normalise_label(key)
+        wanted = {normalise_label(spelling) for spelling in spellings(key)}
         for index, label in enumerate(normalised):
-            if index not in taken and label == wanted:
+            if index not in taken and label in wanted:
                 pairing[key] = index
                 taken.add(index)
                 break
@@ -212,7 +220,7 @@ def pair_labels(keys: Sequence[str], page_labels: Sequence[str]) -> dict[str, in
     for key in keys:
         if key in pairing:
             continue
-        wanted = normalise_label(key) + " "
+        wanted = tuple(normalise_label(spelling) + " " for spelling in spellings(key))
         extended = [
             index
             for index, label in enumerate(normalised)
@@ -237,12 +245,13 @@ def _pair_rows(
     rows: list[etree._Element],
     updates: dict[str, dict[str, str]],
     client_index: int,
+    aliases: Mapping[str, Sequence[str]] | None = None,
 ) -> dict[int, str]:
     """``{id(row): config label}`` for the rows this run may write."""
     spellings = [
         cell_text((row.findall("th") + row.findall("td"))[client_index]) for row in rows
     ]
-    pairing = pair_labels(list(updates), spellings)
+    pairing = pair_labels(list(updates), spellings, aliases)
     return {id(rows[index]): key for key, index in pairing.items()}
 
 
@@ -251,6 +260,7 @@ def apply_versions(
     updates: dict[str, dict[str, str]],
     columns: dict[str, list[str]],
     style: str = "code",
+    aliases: Mapping[str, Sequence[str]] | None = None,
 ) -> tuple[str, list[CellChange], list[str]]:
     """Write MAX/D+ versions into the sign-off table.
 
@@ -276,7 +286,7 @@ def apply_versions(
         if not _is_header_row(row)
         and len(row.findall("th") + row.findall("td")) > indices["client"]
     ]
-    pairing = _pair_rows(client_rows, updates, indices["client"])
+    pairing = _pair_rows(client_rows, updates, indices["client"], aliases)
 
     for row in client_rows:
         key = pairing.get(id(row))

@@ -218,6 +218,7 @@ def _publish(
     updates: dict[str, dict[str, str]],
     columns: dict[str, list[str]],
     style: str,
+    aliases: dict[str, tuple[str, ...]],
     prefix: str,
     retries: int,
 ) -> tuple[int | None, list[CellChange], list[str]]:
@@ -346,8 +347,9 @@ def run(args: argparse.Namespace) -> int:
         write_step_summary(_summary_lines([], skipped, [], published=False, context=context))
         return EXIT_ERROR
 
+    aliases = {client.row: client.aliases for client in config.clients}
     new_body, changes, unmatched = apply_versions(
-        page.body, updates, config.confluence.columns, config.confluence.cell_format
+        page.body, updates, config.confluence.columns, config.confluence.cell_format, aliases
     )
     for item in unmatched:
         log.warning("row %r not found in the sign-off table", item)
@@ -379,6 +381,7 @@ def run(args: argparse.Namespace) -> int:
         updates,
         config.confluence.columns,
         config.confluence.cell_format,
+        aliases,
         config.confluence.version_message,
         args.retries,
     )
