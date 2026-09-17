@@ -32,6 +32,9 @@ cron (15 min) -> GitHub Actions -> build API -> version mapping -> Confluence RE
 
 - **No empty-page revisions.** If the table already matches the builds, nothing
   is published. Otherwise you'd get 96 meaningless page versions a day.
+- **No silent blank.** A configured row the table does not have fails the run
+  rather than warning into a log nobody reads, which is how the two Apple rows
+  stayed empty for a day. Rows that did match are still written first.
 - **No odd row out.** Versions are written as inline code, which is how the
   table's hand-typed rows are formatted. A cell holding the right version in
   bare text is rewritten so the column reads the same all the way down;
@@ -362,7 +365,7 @@ a saved body, `--output body.xhtml` to dump the storage format it would publish,
 `--release-train` to override the train.
 
 ```bash
-pytest    # 127 tests, no network needed
+pytest    # 129 tests, no network needed
 ```
 
 ### When Confluence answers 404
@@ -390,9 +393,12 @@ with "credential refused", and it masks the token.
   under load, which peaks on the hour and quarter-hour, so the crons here sit on
   odd minutes. On this repo the `schedule` event has never fired while manual
   runs succeed, which is a reported pattern for new private repositories on the
-  Free plan. `tools/run-sync.sh` plus the systemd units beside it drive the same
-  sync from a local timer; the build pipeline can also POST to the
-  `repository_dispatch` hook to have Actions do the work on demand.
+  Free plan, and when it does fire it delivers about one tick in ten, minutes
+  late. What actually keeps the page current is a pair of local timers:
+  `gonogo-sync.timer` runs the sync on the quarter-hours and
+  `gonogo-probe.timer` the health probe seven minutes later, both installed
+  from `tools/`. The build pipeline can also POST to the `repository_dispatch`
+  hook to have Actions do the work on demand.
 - **Scheduled workflows go dormant.** GitHub disables schedules in a repository
   with no activity for 60 days. The weekly test run keeps this one awake.
 - **Network reachability is not the same as authentication.** GitHub-hosted

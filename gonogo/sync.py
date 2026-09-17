@@ -351,17 +351,23 @@ def run(args: argparse.Namespace) -> int:
     new_body, changes, unmatched = apply_versions(
         page.body, updates, config.confluence.columns, config.confluence.cell_format, aliases
     )
+    # A configured row the table does not have is a real fault: it is how the
+    # Apple cells stayed blank for a day behind an exit code of 0. Publish what
+    # did match, then say so.
     for item in unmatched:
-        log.warning("row %r not found in the sign-off table", item)
+        log.error("row %r not found in the sign-off table", item)
 
     if args.output:
         Path(args.output).write_text(new_body, encoding="utf-8")
         log.info("wrote updated storage body to %s", args.output)
 
+    def outcome(rows: list[str]) -> int:
+        return EXIT_ERROR if rows else EXIT_OK
+
     if not changes:
         log.info("no version changes; leaving page at version %d", page.version)
         write_step_summary(_summary_lines(changes, skipped, unmatched, published=False, context=context))
-        return EXIT_OK
+        return outcome(unmatched)
 
     for change in changes:
         log.info("change: %s", change)
@@ -370,7 +376,7 @@ def run(args: argparse.Namespace) -> int:
         reason = "no live page" if client is None else "dry run"
         log.info("%s: not publishing %d change(s)", reason, len(changes))
         write_step_summary(_summary_lines(changes, skipped, unmatched, published=False, context=context))
-        return EXIT_OK
+        return outcome(unmatched)
 
     version, changes, unmatched = _publish(
         client,
@@ -388,11 +394,11 @@ def run(args: argparse.Namespace) -> int:
     if version is None:
         log.info("a concurrent edit already carries these versions; nothing published")
         write_step_summary(_summary_lines(changes, skipped, unmatched, published=False, context=context))
-        return EXIT_OK
+        return outcome(unmatched)
 
     log.info("published page %s as version %d", page.id, version)
     write_step_summary(_summary_lines(changes, skipped, unmatched, published=True, context=context))
-    return EXIT_OK
+    return outcome(unmatched)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

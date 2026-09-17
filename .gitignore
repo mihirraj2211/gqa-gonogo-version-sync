@@ -13,3 +13,4 @@ out/
 *.xhtml.out
 scratch/
 sync.log
+probe.log
